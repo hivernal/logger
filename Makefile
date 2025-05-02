@@ -5,8 +5,13 @@ LIBBPF_SRC := $(abspath ./libbpf/src)
 LIBBPF_OUTPUT := $(abspath ./libbpf)
 LIBBPF_OBJ := $(abspath ./libbpf/usr/lib64/libbpf.a)
 
-OBJS := $(OUTPUT)/main.o $(OUTPUT)/bpf_skels.o
-BPF_SKELS := $(SRC_DIR)/execve.skel.h
+ALL_SRC := $(wildcard $(SRC_DIR)/*.c)
+USER_SRC := $(filter-out %.bpf.c,$(ALL_SRC))
+BPF_SRC := $(filter %.bpf.c,$(ALL_SRC))
+USER_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OUTPUT)/%.o,$(USER_SRC))
+BPF_OBJS := $(patsubst $(SRC_DIR)/%.bpf.c,$(OUTPUT)/%.bpf.o,$(BPF_SRC))
+BPF_SKELS := $(patsubst %.bpf.c,%.skel.h,$(BPF_SRC))
+SKELETON := $(SRC_DIR)/logger.skel.h
 
 BPFTOOL_SRC := $(abspath ./bpftool/src)
 BPFTOOL_OUTPUT ?= $(abspath ./bpftool)
@@ -22,13 +27,13 @@ ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' \
 VMLINUX := $(SRC_DIR)/vmlinux.h
 INCLUDES := -I$(LIBBPF_OUTPUT)/usr/include -I$(LIBBPF_SRC)/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
-APP=minimal
+APP=bpf
 
 all: $(APP)
 
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APP) $(BPF_SKELS)
+	$(Q)rm -rf $(OUTPUT) $(APP) $(SKELETON) $(VMLINUX)
 
 $(OUTPUT) $(LIBBPF_OUTPUT) $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -51,17 +56,17 @@ $(OUTPUT)/%.bpf.o: $(SRC_DIR)/%.bpf.c $(LIBBPF_OBJ) $(VMLINUX) | $(OUTPUT) $(BPF
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH)		      \
 		     $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)		      \
-		     -c $(filter %.c,$^) -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
-	$(Q)$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
+		     -c $(filter %.c,$^) -o $@
 
-$(SRC_DIR)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
+$(SRC_DIR)/%.skel.h: $(BPF_OBJS) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,GEN-SKEL,$@)
-	$(Q)$(BPFTOOL) gen skeleton $< > $@
+	$(Q)$(BPFTOOL) gen object $(OUTPUT)/$*.bpf.o $(filter %.o,$^) 
+	$(Q)$(BPFTOOL) gen skeleton $(OUTPUT)/$*.bpf.o > $@
 
-$(OUTPUT)/%.o: $(BPF_SKELS) $(SRC_DIR)/%.c | $(OUTPUT)
+$(OUTPUT)/%.o: $(SKELETON) $(SRC_DIR)/%.c | $(OUTPUT)
 	$(call msg,CC,$@)
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-$(APP): $(OBJS) $(LIBBPF_OBJ)
+$(APP): $(USER_OBJS) $(LIBBPF_OBJ)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
