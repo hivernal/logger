@@ -19,6 +19,17 @@ int sys_execve_callback(void* ctx, void* data, size_t data_sz) {
   return 0;
 }
 
+struct bpf {
+  /* Skeleton object. */
+  struct logger_bpf* skel;
+
+  /* Ring buffers. */
+  struct ring_buffer* sys_execve_rb;
+
+  int is_run;
+  int poll_time_ms;
+};
+
 /* Open BPF application. */
 int bpf_open(struct bpf* bpf) {
   bpf->skel = logger_bpf__open();
