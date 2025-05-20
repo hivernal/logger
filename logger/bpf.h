@@ -3,9 +3,6 @@
 #ifndef LOGGER_BPF_H_
 #define LOGGER_BPF_H_
 
-#include "logger.skel.h"
-#include "process.h"
-
 struct bpf;
 
 struct bpf* bpf_create();

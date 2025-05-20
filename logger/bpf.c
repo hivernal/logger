@@ -1,6 +1,9 @@
-#include "bpf.h"
 #include <bpf/libbpf.h>
-#include <stdlib.h>
+#include "logger/bpf.h"
+#include "logger/bpf/process.h"
+#include "logger/process.skel.h"
+#include "logger/file.skel.h"
+#include "logger/process.h"
 
 #define BPF_OPEN_ERROR_MSG "Failed to open BPF skeleton\n"
 #define BPF_LOAD_ERROR_MSG "Failed to load BPF skeleton\n"
@@ -11,29 +14,25 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char* format,
   return vfprintf(stderr, format, args);
 }
 
-/* Callback function for sys_execve_rb ring buffer. */
-int sys_execve_callback(void* ctx, void* data, size_t data_sz) {
-  const struct sys_execve* sys_execve = (struct sys_execve*)data;
-  printf("Execve: %d %d %d %d %s\n", sys_execve->task.uid, sys_execve->task.gid,
-         sys_execve->task.pid, sys_execve->task.ppid, sys_execve->task.comm);
-  return 0;
-}
-
 struct bpf {
-  /* Skeleton object. */
-  struct logger_bpf* skel;
+  /* Skeletons. */
+  struct process_skel* process_skel; /* Process skeleton object. */
+  struct file_skel* file_skel;       /* File skeleton object. */
 
   /* Ring buffers. */
   struct ring_buffer* sys_execve_rb;
 
+  /*
   int is_run;
   int poll_time_ms;
+  */
 };
 
 /* Open BPF application. */
 int bpf_open(struct bpf* bpf) {
-  bpf->skel = logger_bpf__open();
-  if (!bpf->skel) {
+  bpf->process_skel = process_skel__open();
+  bpf->file_skel = file_skel__open();
+  if (!bpf->process_skel || !bpf->file_skel) {
     fprintf(stderr, BPF_OPEN_ERROR_MSG);
     return 1;
   }
@@ -42,7 +41,8 @@ int bpf_open(struct bpf* bpf) {
 
 /* Load & verify BPF programs. */
 int bpf_load(struct bpf* bpf) {
-  if (logger_bpf__load(bpf->skel)) {
+  if (process_skel__load(bpf->process_skel) ||
+      file_skel__load(bpf->file_skel)) {
     fprintf(stderr, BPF_LOAD_ERROR_MSG);
     return 1;
   }
@@ -51,7 +51,8 @@ int bpf_load(struct bpf* bpf) {
 
 /* Attach tracepoint handler. */
 int bpf_attach(struct bpf* bpf) {
-  if (logger_bpf__attach(bpf->skel)) {
+  if (process_skel__attach(bpf->process_skel) ||
+      file_skel__attach(bpf->file_skel)) {
     fprintf(stderr, BPF_ATTACH_ERROR_MSG);
     return 1;
   }
@@ -61,7 +62,7 @@ int bpf_attach(struct bpf* bpf) {
 /* Create ring buffers. */
 int create_ring_buffers(struct bpf* bpf) {
   bpf->sys_execve_rb =
-      ring_buffer__new(bpf_map__fd(bpf->skel->maps.sys_execve_rb),
+      ring_buffer__new(bpf_map__fd(bpf->process_skel->maps.sys_execve_rb),
                        sys_execve_callback, NULL, NULL);
   if (!bpf->sys_execve_rb) {
     fprintf(stderr, "Error to create ring_buffer\n");
@@ -94,6 +95,7 @@ struct bpf* bpf_create() {
 
 /* Destroy BPF application. */
 void bpf_destroy(struct bpf* bpf) {
-  if (bpf->skel) logger_bpf__destroy(bpf->skel);
+  if (bpf->process_skel) process_skel__destroy(bpf->process_skel);
+  if (bpf->file_skel) file_skel__destroy(bpf->file_skel);
   if (bpf) free(bpf);
 }
