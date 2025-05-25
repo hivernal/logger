@@ -8,19 +8,30 @@
 #define ARGS_SIZE (ARG_SIZE * MAX_ARGS)
 #define LAST_ARG_OFFSET (ARGS_SIZE - ARG_SIZE)
 
-/* Struct contains an array of process args getting obtained from
- * sys_enter_execve argv. */
+/* Struct contains execve args. */
 struct sys_execve_args {
   int dfd;
-  char pathname[PATH_SIZE];
+  char filename[PATH_SIZE];
   char argv[ARGS_SIZE];
+};
+
+enum path_type {
+  PATH_ABSOLUTE,
+  PATH_RELATIVE_CWD,
+  PATH_RELATIVE_FD
 };
 
 struct sys_execve {
   int ret;
   struct task task;
-  struct path_name cwd;
   struct sys_execve_args args;
+  enum path_type filename_type;
+  struct path_name cwd;
+};
+
+struct sys_execveat {
+  struct sys_execve sys_execve;
+  struct path_name dir;
 };
 
 struct sched_process_exit {

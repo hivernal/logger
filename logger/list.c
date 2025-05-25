@@ -36,8 +36,10 @@ void pop_item(struct list* list) {
   struct private_data* data = list->data;
   if (!data->tail) return;
   struct node* old_tail = data->tail;
-  data->tail = data->tail->prev;
-  if (data->tail) data->tail->next = NULL;
+  struct node* new_tail = old_tail->prev;
+  data->tail = new_tail;
+  if (new_tail) new_tail->next = NULL;
+  else data->head = NULL;
   if (old_tail->data) free(old_tail->data);
   free(old_tail);
   --(data->size);
@@ -57,16 +59,19 @@ void delete_list(struct list* list) {
   list = NULL;
 }
 
-void for_each(const struct list* list, void* data,
-              void (*callback)(void* node_data, void* data)) {
-  if (!list) return;
+int for_each(const struct list* list, void* data,
+             int (*callback)(void* node_data, void* data)) {
+  if (!list) return 1;
   struct private_data* list_data = list->data;
+  int ret;
   for (struct node* node = list_data->head; node; node = node->next) {
-    callback(node->data, data);
+    ret = callback(node->data, data);
+    if (ret) return ret;
   }
+  return 0;
 }
 
-const static struct list_op list_op_global = {delete_list, push_item, pop_item,
+static const struct list_op list_op_global = {delete_list, push_item, pop_item,
                                               for_each};
 
 struct list* list_init() {

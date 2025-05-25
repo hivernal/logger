@@ -1,6 +1,6 @@
 #include "bpf.h"
 
-int main(int argc, char** argv) {
+int main() {
   struct bpf* bpf = bpf_create();
   if (!bpf) return 1;
 

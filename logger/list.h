@@ -12,8 +12,8 @@ struct list_op {
   void (*delete)(struct list*);
   void (*push)(struct list*, void*, size_t);
   void (*pop)(struct list*);
-  void (*for_each)(const struct list*, void*,
-                   void (*)(void* node_data, void* data));
+  int (*for_each)(const struct list*, void*,
+                   int (*)(void* node_data, void* data));
 };
 
 struct list* list_init();

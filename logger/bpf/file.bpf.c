@@ -37,8 +37,10 @@ int sys_enter_openat(struct syscall_trace_enter* ctx) {
 
   ret = read_path_name(&path, path_name, 0);
   if (ret < 0) bpf_printk("error to read path_name");
+  /*
   bpf_printk("write fd: %3d; path_name: %s", fd,
              path_name->data + path_name->offset);
+	     */
 
   return 0;
 }

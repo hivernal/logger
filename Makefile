@@ -28,7 +28,9 @@ ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' \
 			 | sed 's/loongarch64/loongarch/')
 VMLINUX := $(SRC_DIR)/bpf/vmlinux.h
 INCLUDES := -I$(LIBBPF_OUTPUT)/usr/include -I$(LIBBPF_SRC)/include/uapi -I$(CUR_DIR)
-CFLAGS := -g -Wall
+CFLAGS := -g -Wall -Wextra -Werror -Wconversion -Wsign-conversion
+CLANG_CFLAGS := $(CFLAGS)
+GCC_CFLAGS := $(CFLAGS) -Wduplicated-cond -Wduplicated-branches -Wlogical-op
 APP=bpf
 
 all: $(APP)
@@ -56,7 +58,7 @@ $(VMLINUX): $(BPFTOOL)
 
 $(OUTPUT)/%.bpf.o: $(SRC_DIR)/bpf/%.bpf.c $(SRC_DIR)/bpf/%.h $(LIBBPF_OBJ) $(VMLINUX) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
-	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH)		      \
+	$(Q)$(CLANG) $(CLANG_CFLAGS) -O2 -target bpf -D__TARGET_ARCH_$(ARCH)		      \
 		     $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)		      \
 		     -c $(filter %.c,$^) -o $@
 
@@ -67,8 +69,8 @@ $(SRC_DIR)/%.skel.h: $(OUTPUT)/%.bpf.o $(BPF_HELPERS_OBJS) | $(OUTPUT) $(BPFTOOL
 
 $(OUTPUT)/%.o: $(BPF_SKELS) $(SRC_DIR)/%.c | $(OUTPUT)
 	$(call msg,CC,$@)
-	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
+	$(Q)$(CC) $(GCC_CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
 $(APP): $(USER_OBJS) $(LIBBPF_OBJ)
 	$(call msg,BINARY,$@)
-	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
+	$(Q)$(CC) $(GCC_CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@

@@ -13,6 +13,7 @@ struct task {
   pid_t pid;
   pid_t ppid;
   pid_t tgid;
+  unsigned sessionid;
   char comm[TASK_COMM_LEN];
 };
 
@@ -22,4 +23,4 @@ struct path_name {
   unsigned offset;
 };
 
-#endif // LOGGER_BPF_TASK_H_
+#endif  // LOGGER_BPF_TASK_H_

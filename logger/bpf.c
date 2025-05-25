@@ -1,16 +1,22 @@
-#include <bpf/libbpf.h>
 #include "logger/bpf.h"
-#include "logger/bpf/process.h"
+#include <bpf/libbpf.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
 #include "logger/process.skel.h"
 #include "logger/file.skel.h"
+#pragma GCC diagnostic pop
+
 #include "logger/process.h"
 
 #define BPF_OPEN_ERROR_MSG "Failed to open BPF skeleton\n"
 #define BPF_LOAD_ERROR_MSG "Failed to load BPF skeleton\n"
 #define BPF_ATTACH_ERROR_MSG "Failed to attach BPF skeleton\n"
+#define BPF_CREATE_RB_ERROR_MSG "Failed to create BPF ringbuffer\n"
 
-static int libbpf_print_fn(enum libbpf_print_level level, const char* format,
-                           va_list args) {
+static int libbpf_print_fn(enum libbpf_print_level level
+                           __attribute__((unused)),
+                           const char* format, va_list args) {
   return vfprintf(stderr, format, args);
 }
 
@@ -65,7 +71,7 @@ int create_ring_buffers(struct bpf* bpf) {
       ring_buffer__new(bpf_map__fd(bpf->process_skel->maps.sys_execve_rb),
                        sys_execve_callback, NULL, NULL);
   if (!bpf->sys_execve_rb) {
-    fprintf(stderr, "Error to create ring_buffer\n");
+    fprintf(stderr, BPF_CREATE_RB_ERROR_MSG);
     return 1;
   }
   return 0;
