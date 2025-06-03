@@ -15,12 +15,6 @@ struct sys_execve_args {
   char argv[ARGS_SIZE];
 };
 
-enum path_type {
-  PATH_ABSOLUTE,
-  PATH_RELATIVE_CWD,
-  PATH_RELATIVE_FD
-};
-
 struct sys_execve {
   int ret;
   struct task task;

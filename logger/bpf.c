@@ -8,14 +8,16 @@
 #pragma GCC diagnostic pop
 
 #include "logger/process.h"
+#include "logger/file.h"
 
 #define BPF_OPEN_ERROR_MSG "Failed to open BPF skeleton\n"
 #define BPF_LOAD_ERROR_MSG "Failed to load BPF skeleton\n"
 #define BPF_ATTACH_ERROR_MSG "Failed to attach BPF skeleton\n"
 #define BPF_CREATE_RB_ERROR_MSG "Failed to create BPF ringbuffer\n"
 
-static int libbpf_print_fn(enum libbpf_print_level level
-                           __attribute__((unused)),
+#define UNUSED __attribute__((unused))
+
+static int libbpf_print_fn(enum libbpf_print_level level UNUSED,
                            const char* format, va_list args) {
   return vfprintf(stderr, format, args);
 }
@@ -27,6 +29,7 @@ struct bpf {
 
   /* Ring buffers. */
   struct ring_buffer* sys_execve_rb;
+  struct ring_buffer* file_rb;
 
   /*
   int is_run;
@@ -70,7 +73,9 @@ int create_ring_buffers(struct bpf* bpf) {
   bpf->sys_execve_rb =
       ring_buffer__new(bpf_map__fd(bpf->process_skel->maps.sys_execve_rb),
                        sys_execve_callback, NULL, NULL);
-  if (!bpf->sys_execve_rb) {
+  bpf->file_rb = ring_buffer__new(bpf_map__fd(bpf->file_skel->maps.file_rb),
+                                  file_callback, NULL, NULL);
+  if (!bpf->sys_execve_rb || !bpf->file_rb) {
     fprintf(stderr, BPF_CREATE_RB_ERROR_MSG);
     return 1;
   }
@@ -80,6 +85,9 @@ int create_ring_buffers(struct bpf* bpf) {
 /* Poll data from ring buffers. */
 int poll_ring_buffers(struct bpf* bpf) {
   if (ring_buffer__poll(bpf->sys_execve_rb, 100) < 0) {
+    return 1;
+  }
+  if (ring_buffer__poll(bpf->file_rb, 100) < 0) {
     return 1;
   }
   return 0;

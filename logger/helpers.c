@@ -1,4 +1,5 @@
 #include "logger/helpers.h"
+
 #include <stdio.h>
 
 void print_task(const struct task* task) {
@@ -40,7 +41,10 @@ int get_path_name_cptrs(struct list* list, const char* path_name) {
 }
 
 const char* get_dir_cptr(const struct path_name* path_name, int dir_index) {
-  const char* cptr = path_name->data + sizeof(path_name->data) - 3;
+  /* The last symbol before '\0'. */
+  const char* cptr = path_name->data + sizeof(path_name->data) - 2;
+  if (!dir_index) return cptr;
+  --cptr;
   const char* const start = path_name->data + path_name->offset;
   for (; cptr >= start; --cptr) {
     if (*cptr == '/') {
@@ -70,4 +74,71 @@ void print_relative_filename(const char* filename,
   list->op->for_each(list, NULL, print_path_name_cptr);
   putchar('\n');
   list->op->delete(list);
+}
+
+#define LINES_RESERVED_DEFAULT 256
+
+long read_text_file(struct text* text, FILE* file) {
+  long pos = ftell(file);
+  if (pos == -1) return pos;
+  char* ptr;
+  while ((ptr = fgets(text->buffer + pos,
+                      (int)(text->buffer_size - (size_t)pos + 2), file))) {
+    if (text->lines_size >= text->lines_reserved) {
+      text->lines_reserved <<= 2;
+      text->lines = realloc(text->lines,
+                            sizeof(const char*) * (size_t)text->lines_reserved);
+    }
+    text->lines[text->lines_size] = ptr;
+    ++text->lines_size;
+    pos = ftell(file);
+    if (pos == -1) return pos;
+  }
+  return pos;
+}
+
+struct text* text_file_init(const char* filename) {
+  struct text* text = malloc(sizeof(struct text));
+  if (!text) return NULL;
+  FILE* file = fopen(filename, "r");
+  if (!file) {
+    free(text);
+    return NULL;
+  }
+  if (fseek(file, 0, SEEK_END)) {
+    free(text);
+    fclose(file);
+    return NULL;
+  }
+  long file_size = ftell(file);
+  if (file_size == -1 || fseek(file, 0, SEEK_SET)) {
+    free(text);
+    fclose(file);
+    return NULL;
+  }
+  text->buffer_size = (size_t)file_size;
+  text->buffer = malloc(text->buffer_size);
+  if (!text->buffer) {
+    free(text);
+    fclose(file);
+    return NULL;
+  }
+  text->lines_reserved = LINES_RESERVED_DEFAULT;
+  text->lines_size = 0;
+  text->lines = malloc(sizeof(const char*) * LINES_RESERVED_DEFAULT);
+  if (!text->lines || read_text_file(text, file) == -1) {
+    free(text->buffer);
+    if (text->lines) free(text->lines);
+    free(text);
+    fclose(file);
+    return NULL;
+  }
+  fclose(file);
+  return text;
+}
+
+void text_delete(struct text* text) {
+  if (!text) return;
+  if (text->lines) free(text->lines);
+  if (text->buffer) free(text->buffer);
 }

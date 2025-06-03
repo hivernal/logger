@@ -6,6 +6,13 @@
 #define DENTRY_NAME_SIZE 256
 #define MAX_DENTRIES 128
 
+enum path_type {
+  PATH_ABSOLUTE,
+  // PATH_ABSOLUTE_FD,
+  PATH_RELATIVE_CWD,
+  PATH_RELATIVE_FD
+};
+
 struct task {
   uint64_t time_nsec;
   uid_t uid;

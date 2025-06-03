@@ -7,12 +7,25 @@
 #include "logger/list.h"
 #include "logger/bpf/task.h"
 
+#define UNUSED __attribute__((unused))
+
 void print_task(const struct task* task);
-int get_path_name_cptrs(struct list* list, const char* path_name);
-int print_path_name_cptr(void* node_data, void* data);
-const char* get_dir_cptr(const struct path_name* path_name, int dir_index);
+
 void print_substr(const char* start, const char* end);
+
 void print_relative_filename(const char* filename,
                              const struct path_name* path_name);
+
+struct text {
+  size_t buffer_size;
+  int lines_size;
+  int lines_reserved;
+  char* buffer;
+  const char** lines;
+};
+
+struct text* text_file_init(const char* filename);
+// struct text* text_buffer_init(const char* filename);
+void text_delete(struct text* text);
 
 #endif  //  LOGGER_HELPERS_H_

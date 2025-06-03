@@ -1,2 +1,3 @@
-logger/vmlinux.h
+logger/bpf/vmlinux.h
 logger/*.skel.h
+logger/*tags*

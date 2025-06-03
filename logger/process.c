@@ -27,9 +27,9 @@ void print_sys_execve(const struct sys_execve* sys_execve) {
          sys_execve->cwd.data + sys_execve->cwd.offset, sys_execve->ret);
 }
 
-int sys_execve_callback(void* ctx __attribute__((unused)), void* data,
-                        size_t data_sz __attribute__((unused))) {
-  const struct sys_execve* sys_execve = (struct sys_execve*)data;
-  print_sys_execve(sys_execve);
+int sys_execve_callback(void* ctx UNUSED, void* data UNUSED,
+                        size_t data_sz UNUSED) {
+  // const struct sys_execve* sys_execve = (struct sys_execve*)data;
+  // print_sys_execve(sys_execve);
   return 0;
 }
