@@ -19,7 +19,7 @@ int get_path_name_cptrs(struct list* list, const char* path_name) {
         path_name += 2;
         continue;
       } else if (*(path_name + 1) == '.') {
-        list->op->pop(list);
+        list->vt->pop_back(list);
         --count;
         if (count < dir_index) dir_index = count;
         path_name += 3;
@@ -34,7 +34,7 @@ int get_path_name_cptrs(struct list* list, const char* path_name) {
       }
     }
     offsets[1] = path_name;
-    list->op->push(list, &offsets, sizeof(offsets));
+    list->vt->push_back(list, &offsets, sizeof(offsets));
     ++count;
   }
   return dir_index;
@@ -71,9 +71,9 @@ void print_relative_filename(const char* filename,
   int dir_index = get_path_name_cptrs(list, filename);
   const char* cptr = get_dir_cptr(path_name, dir_index);
   print_substr(path_name->data + path_name->offset, cptr);
-  list->op->for_each(list, NULL, print_path_name_cptr);
+  list->vt->for_each(list, NULL, print_path_name_cptr);
   putchar('\n');
-  list->op->delete(list);
+  list->vt->delete(list);
 }
 
 #define LINES_RESERVED_DEFAULT 256

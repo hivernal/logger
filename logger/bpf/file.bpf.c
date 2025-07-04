@@ -42,18 +42,20 @@ struct {
 SEC("tracepoint/syscalls/sys_enter_write")
 int tracepoint__syscalls__sys_enter_write(struct syscall_trace_enter* ctx) {
   int fd = (int)ctx->args[0];
-  const char* buffer = (const char*)ctx->args[1];
+  // const char* buffer = (const char*)ctx->args[1];
   size_t count = (size_t)ctx->args[2];
   int i = 0;
   struct write_args* args = bpf_map_lookup_elem(&write_args_array, &i);
   if (!args) return 1;
   args->fd = fd;
   args->count = count;
+  /*
   if (count + 1 < sizeof(args->buffer)) {
     bpf_probe_read_user_str(&args->buffer, (unsigned)count + 1, buffer);
   } else {
     bpf_probe_read_user_str(&args->buffer, sizeof(args->buffer), buffer);
   }
+  */
   struct file* file;
   get_file_from_fd(args->fd, &file);
   args->pos = BPF_CORE_READ(file, f_pos);
