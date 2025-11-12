@@ -3,210 +3,199 @@
 
 #include "logger/bpf/task.h"
 
-#define DEFINE_STRUCT(name)   \
-  struct name {               \
-    enum path_type path_type; \
-    struct task task;         \
-    struct name##_args args;  \
-    int ret;                  \
-  }
+#define SYS_WRITE_BUFFER_SIZE 8192
 
-#define DEFINE_STRUCT_FD(name)  \
-  struct name {                 \
-    enum path_type path_type;   \
-    struct task task;           \
-    struct name##_args args;    \
-    struct path_name path_name; \
-    int ret;                    \
-  }
-
-#define DEFINE_STRUCT_AT(name) \
-  struct name##at {            \
-    struct name name;          \
-    struct path_name dir;      \
-  }
-
-#define DEFINE_STRUCT2(name) \
-  DEFINE_STRUCT(name);       \
-  DEFINE_STRUCT_AT(name)
-
-enum event_type {
-  EXECVE,
-  PROCESS_EXIT,
-  WRITE,
-  READ,
-  RMDIR,
-  UNLINK,
-  MKDIR,
-  RENAME,
+/*
+ * System files that contains info about users and groups.
+ * For these files buffer must be set.
+ */
+enum file_type {
+  FILE_TYPE_OTHER = 0,
+  FILE_TYPE_PASSWD,
+  FILE_TYPE_GROUP,
+  FILE_TYPE_DOAS,
+  FILE_TYPE_SUDOERS,
+  FILE_TYPE_SUDOERS_DIR,
 };
 
-struct write_args {
+struct sys_enter_file {
+  /* File descriptor. */
   int fd;
-  char buffer[8192];
-  size_t count;
-  loff_t pos;
-  unsigned flags;
-  unsigned mode;
-};
-
-
-struct write {
-  enum path_type path_type;
-  struct task task;
-  struct write_args args;
-  int ret;
-  struct path_name path_name;
-};
-
-struct unlink_args {
-  int dfd;
-  int flags;
+  /* New file descripto for rename, renameat, reanmeat2 syscalls. */
+  int newfd;
+  /* File name. */
   char filename[PATH_SIZE];
-};
-
-DEFINE_STRUCT2(unlink);
-
-/*
-struct unlink {
-  enum path_type path_type;
-  struct task task;
-  struct unlink_args args;
-};
-
-struct unlinkat {
-  struct unlink unlink;
-  struct path_name dir;
-};
-*/
-
-struct rmdir_args {
-  char filename[PATH_SIZE];
-};
-
-DEFINE_STRUCT2(rmdir);
-
-/*
-struct rmdir {
-  enum path_type path_type;
-  struct task task;
-  struct rmdir_args args;
-};
-
-struct rmdirat {
-  struct rmdir rmdir;
-  struct path_name dir;
-};
-*/
-
-struct rename_args {
-  int olddfd;
-  int newdfd;
-  char oldfilename[PATH_SIZE];
+  /* New file name for rename, renameat, reanmeat2 syscalls. */
   char newfilename[PATH_SIZE];
-};
-
-struct rename {
-  enum path_type old_path_type;
-  enum path_type new_path_type;
-  struct task task;
-  struct rename_args args;
-};
-
-DEFINE_STRUCT_AT(rename);
-
-/*
-struct renameat {
-  struct rename rename;
-  struct path_name dir;
-};
-*/
-
-struct renameat2 {
-  struct rename rename;
-  struct path_name olddir;
-  struct path_name newdir;
-};
-
-struct chmod_args {
-  char filename[PATH_SIZE];
-};
-
-DEFINE_STRUCT2(chmod);
-
-/*
-struct chmod {
-  enum path_type path_type;
-  struct task task;
-  struct chmod_args args;
-};
-
-struct chmodat {
-  struct chmod chmod;
-  struct path_name dir;
-};
-*/
-
-struct fchmod_args {
-  int fd;
-};
-
-DEFINE_STRUCT_FD(fchmod);
-
-/*
-struct fchmod {
-  enum path_type path_type;
-  struct task task;
-  struct fchmod_args args;
-  struct path_name path_name;
-};
-*/
-
-struct chown_args {
+  /* The number of bytes to be written to the file or readen from the file. */
+  size_t count;
+  /* The position to write or read. */
+  loff_t f_pos;
+  /* File flags. file.f_flags. */
+  unsigned f_flags;
+  /* File mode. file.f_mode. */
+  unsigned f_mode;
+  /* Path dentries. */
+  struct path_dentries path_dentries;
+  /* Syscalls flags arg. */
+  int flags;
+  /* Buffer for write syscall. */
+  char buffer[SYS_WRITE_BUFFER_SIZE];
+  /* Mode for chmod, fchmod, fchmodat syscalls. */
+  unsigned mode;
+  /* UID for chown, fchown, fchownat syscalls. */
   uid_t uid;
+  /* GID for chown, fchown, fchownat syscalls. */
   gid_t gid;
-  int dfd;
+  /* System file type. */
+  int file_type;
+  int error;
+  /* Flag to check errors between enter and exit tracepoints. */
+  int is_correct;
+};
+
+/* Struct for the write syscall. */
+struct sys_write {
+  struct task task;
+  /* The number of bytes to be written to the file. */
+  size_t count;
+  /* The position to write. */
+  loff_t f_pos;
+  /* File flags. file.f_flags. */
+  unsigned f_flags;
+  /* File mode. file.f_mode. */
+  unsigned f_mode;
+  int file_type;
+  /* File name. */
+  struct path_dentries file;
+  /* The number of bytes written. */
+  int ret;
+  int error;
+  int event_type;
+  /* The written buffer. */
+  char buffer[];
+};
+
+/* Struct for the read syscall. */
+struct sys_read {
+  struct task task;
+  int error;
+  /* The number of bytes to be readen from the file. */
+  size_t count;
+  /* The position to read. */
+  loff_t f_pos;
+  /* File flags. file.f_flags. */
+  unsigned f_flags;
+  /* File mode. file.f_mode. */
+  unsigned f_mode;
+  /* File name. */
+  struct path_dentries file;
+  /* The number of readen bytes. */
+  int event_type;
+  int ret;
+};
+
+/* Struct for the unlink syscall. */
+struct sys_unlink {
+  struct task task;
+  enum path_type filename_type;
+  int event_type;
+  /* On success, zero is returned. */
+  int ret;
+  int error;
+  int flags;
+  /* File name. */
   char filename[PATH_SIZE];
 };
 
-DEFINE_STRUCT2(chown);
-
-/*
-struct chown {
-  enum path_type path_type;
-  struct task task;
-  struct chown_args args;
+/* Struct for the unlinkat syscall. */
+struct sys_unlinkat {
+  struct sys_unlink sys_unlink;
+  struct path_dentries dir;
 };
 
-struct chownat {
-  struct chown chown;
-  struct path_name dir;
-};
-*/
+#define SYS_CHMOD_HEADER        \
+  struct task task;             \
+  enum path_type filename_type; \
+  unsigned mode;                \
+  int event_type;               \
+  int flags;                    \
+  int error;                    \
+  int ret
 
-struct fchown_args {
-  uid_t uid;
-  gid_t gid;
-  int fd;
-};
-
-DEFINE_STRUCT_FD(fchown);
-
-/*
-struct fchown {
-  enum path_type path_type;
-  struct task task;
-  struct fchown_args args;
-  struct path_name path_name;
-};
-*/
-
-struct mkdir_args {
-  int fd;
-  mode_t mode;
+/* Struct for the chmod syscall. */
+struct sys_chmod {
+  SYS_CHMOD_HEADER;
   char filename[PATH_SIZE];
 };
 
-DEFINE_STRUCT2(mkdir);
+/* Struct for the fchmod syscall. */
+struct sys_fchmod {
+  SYS_CHMOD_HEADER;
+  struct path_dentries file;
+};
+
+/* Struct for the fchmodat syscall. */
+struct sys_fchmodat {
+  struct sys_chmod sys_chmod;
+  struct path_dentries dir;
+};
+
+#define SYS_CHOWN_HEADER        \
+  struct task task;             \
+  enum path_type filename_type; \
+  uid_t uid;                    \
+  gid_t gid;                    \
+  int event_type;               \
+  int flags;                    \
+  int error;                    \
+  int ret
+
+/* Struct for the chown syscall. */
+struct sys_chown {
+  SYS_CHOWN_HEADER;
+  char filename[PATH_SIZE];
+};
+
+/* Struct for the fchown syscall. */
+struct sys_fchown {
+  SYS_CHOWN_HEADER;
+  struct path_dentries file;
+};
+
+/* Struct for the fchownat syscall. */
+struct sys_fchownat {
+  struct sys_chown sys_chown;
+  struct path_dentries dir;
+};
+
+/* Struct for the rename syscall. */
+struct sys_rename {
+  struct task task;
+  enum path_type newname_type;
+  enum path_type oldname_type;
+  char oldname[PATH_SIZE];
+  char newname[PATH_SIZE];
+  int event_type;
+  int flags;
+  int error;
+  int ret;
+};
+
+/*
+ * Struct for the renameat, renameat2 syscall if one of names is relative or
+ * both names are relative and newdirfd == olddirfd.
+ */
+struct sys_renameat {
+  struct sys_rename sys_rename;
+  struct path_dentries dir;
+};
+
+/* Struct for the renameat, renameat2 syscall. */
+struct sys_renameat2 {
+  struct sys_rename sys_rename;
+  struct path_dentries newdir;
+  struct path_dentries olddir;
+};
 
 #endif  // LOGGER_BPF_FILE_H_

@@ -1,3 +1,5 @@
 logger/bpf/vmlinux.h
 logger/*.skel.h
-logger/*tags*
+logger/bpf/feature_probe.h
+.output
+system_logger

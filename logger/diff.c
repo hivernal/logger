@@ -1,4 +1,4 @@
-#include "logger/diff.h"
+#include "diff.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +34,7 @@ int search_path(int* fv, int* bv, int d, int d_max, int delta, const void* a,
       x = fv[k_off - 1] + 1;
     }
     y = x - box->x1 - k + box->y1;
-    while (x < box->x2 && y < box->y2 && cmp(a, x, b, y)) {
+    while (x < box->x2 && y < box->y2 && !cmp(a, x, b, y)) {
       ++x;
       ++y;
     }
@@ -58,7 +58,7 @@ int search_path(int* fv, int* bv, int d, int d_max, int delta, const void* a,
       y = bv[k_off - 1] - 1;
     }
     x = y - box->y1 + k + box->x1;
-    while (x > box->x1 && y > box->y1 && cmp(a, x - 1, b, y - 1)) {
+    while (x > box->x1 && y > box->y1 && !cmp(a, x - 1, b, y - 1)) {
       --x;
       --y;
     }
@@ -98,16 +98,16 @@ int find_middle(const void* a, const void* b, struct box* box,
 }
 
 void shortest_edit_script(const void* a, const void* b, const struct box* box,
-                          const struct diff_callbacks* callbacks) {
+                          const struct diff_callbacks* callbacks, void* data) {
   struct box copy;
   box_copy(box, &copy);
   while (copy.x1 < copy.x2 && copy.y1 < copy.y2 &&
-         callbacks->cmp(a, copy.x1, b, copy.y1)) {
+         !callbacks->cmp(a, copy.x1, b, copy.y1)) {
     ++copy.x1;
     ++copy.y1;
   }
   while (copy.x2 > copy.x1 && copy.y2 > copy.y1 &&
-         callbacks->cmp(a, copy.x2 - 1, b, copy.y2 - 1)) {
+         !callbacks->cmp(a, copy.x2 - 1, b, copy.y2 - 1)) {
     --copy.x2;
     --copy.y2;
   }
@@ -120,23 +120,23 @@ void shortest_edit_script(const void* a, const void* b, const struct box* box,
         .x1 = copy.x1, .y1 = copy.y1, .x2 = middle.x1, .y2 = middle.y1};
     struct box box2 = {
         .x1 = middle.x2, .y1 = middle.y2, .x2 = copy.x2, .y2 = copy.y2};
-    shortest_edit_script(a, b, &box1, callbacks);
-    shortest_edit_script(a, b, &box2, callbacks);
+    shortest_edit_script(a, b, &box1, callbacks, data);
+    shortest_edit_script(a, b, &box2, callbacks, data);
   } else if (n > 0) {
-    for (int i = copy.x1; i < copy.x2; ++i) callbacks->del(a, i);
+    for (int i = copy.x1; i < copy.x2; ++i) callbacks->del(a, i, data);
   } else {
-    for (int i = copy.y1; i < copy.y2; ++i) callbacks->add(b, i);
+    for (int i = copy.y1; i < copy.y2; ++i) callbacks->add(b, i, data);
   }
 }
 
 void longest_common_subseq(const void* a, const void* b, const struct box* box,
-                           const struct diff_callbacks* callbacks) {
+                           const struct diff_callbacks* callbacks, void* data) {
   const int n = box->x2 - box->x1, m = box->y2 - box->y1;
   if (n > 0 && m <= 0) {
-    for (int i = box->x1; i < box->x2; ++i) callbacks->del(a, i);
+    for (int i = box->x1; i < box->x2; ++i) callbacks->del(a, i, data);
     return;
   } else if (m > 0 && n <= 0) {
-    for (int i = box->y1; i < box->y2; ++i) callbacks->add(b, i);
+    for (int i = box->y1; i < box->y2; ++i) callbacks->add(b, i, data);
     return;
   } else if (n <= 0 && m <= 0) {
     return;
@@ -149,18 +149,18 @@ void longest_common_subseq(const void* a, const void* b, const struct box* box,
         .x1 = box->x1, .y1 = box->y1, .x2 = middle.x1, .y2 = middle.y1};
     struct box box2 = {
         .x1 = middle.x2, .y1 = middle.y2, .x2 = box->x2, .y2 = box->y2};
-    longest_common_subseq(a, b, &box1, callbacks);
-    longest_common_subseq(a, b, &box2, callbacks);
+    longest_common_subseq(a, b, &box1, callbacks, data);
+    longest_common_subseq(a, b, &box2, callbacks, data);
   } else if (m > n) {
-    callbacks->add(b, middle.y1 - 1);
+    callbacks->add(b, middle.y1 - 1, data);
   } else {
-    callbacks->del(a, middle.x1 - 1);
+    callbacks->del(a, middle.x1 - 1, data);
   }
 }
 
 void diff(const void* a, int n, const void* b, int m,
-          const struct diff_callbacks* callbacks) {
+          const struct diff_callbacks* callbacks, void* data) {
   struct box box = {.x1 = 0, .y1 = 0, .x2 = n, .y2 = m};
   // longest_common_subseq(a, b, &box, callbacks);
-  shortest_edit_script(a, b, &box, callbacks);
+  shortest_edit_script(a, b, &box, callbacks, data);
 }
