@@ -40,8 +40,8 @@ void fprint_sys_sock(FILE* file, const struct sys_sock* sys_sock) {
   } else {
     return;
   }
-  fprintf(file, "\nerror: 0x%x\nret: %d\nstate: %u\n", sys_sock->error,
-          sys_sock->ret, sys_sock->state);
+  fprintf(file, "\nerror: 0x%x\nret: %d\nstate: %u\ntype: %d\n", sys_sock->error,
+          sys_sock->ret, sys_sock->state, sys_sock->type);
   const struct protoent* protocol = getprotobynumber(sys_sock->protocol);
   if (protocol) fprintf(file, "protocol: %s\n", protocol->p_name);
   else fprintf(file, "protocol: %d\n", sys_sock->protocol);

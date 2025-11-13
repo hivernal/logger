@@ -17,13 +17,11 @@ struct {
  * tracepoints.
  */
 struct {
-  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-  __uint(max_entries, 1);
-  __type(key, u32);
-  __type(value, struct sys_enter_sock);
-} sys_enter_sock_array SEC(".maps");
-
-const int array_index = 0;
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, int);
+} sys_enter_sock_hash SEC(".maps");
 
 FUNC_INLINE int get_sock_from_fd(int fd, const struct sock** sock) {
   if (!sock) return 1;
@@ -35,32 +33,16 @@ FUNC_INLINE int get_sock_from_fd(int fd, const struct sock** sock) {
   return 0;
 }
 
-/* Fills the sys_enter_sock_array map via sockaddr. */
+/* Fills the sys_enter_sock_hash map. */
 FUNC_INLINE int on_sys_enter_sock(int fd) {
-  struct sys_enter_sock* enter =
-      bpf_map_lookup_elem(&sys_enter_sock_array, &array_index);
-  if (!enter) return 1;
-  enter->fd = fd;
-  enter->is_correct = 1;
-  return 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  return (int)bpf_map_update_elem(&sys_enter_sock_hash, &hash_id, &fd, BPF_ANY);
 }
 
 SEC("tracepoint/syscalls/sys_enter_connect")
 int tracepoint__syscalls__sys_enter_connect(struct syscall_trace_enter* ctx) {
   return on_sys_enter_sock((int)ctx->args[0]);
 }
-
-/*
-SEC("tracepoint/syscalls/sys_enter_accept")
-int tracepoint__syscalls__sys_enter_accept(struct syscall_trace_enter* ctx) {
-  return on_sys_enter_sock((int)ctx->args[0]);
-}
-
-SEC("tracepoint/syscalls/sys_enter_accept4")
-int tracepoint__syscalls__sys_enter_accept4(struct syscall_trace_enter* ctx) {
-  return on_sys_enter_sock((int)ctx->args[0]);
-}
-*/
 
 /* Reads the destination and source addresses and ports of the sock. */
 FUNC_INLINE int fill_sys_sock4(struct sys_sock4* sys_sock4,
@@ -137,12 +119,13 @@ FUNC_INLINE int fill_and_send_sock(const struct sock* sock, int sys_ret,
 }
 
 FUNC_INLINE int on_sys_exit_sock(int sys_ret, int event_type) {
-  struct sys_enter_sock* enter =
-      bpf_map_lookup_elem(&sys_enter_sock_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  const int *fd =
+      bpf_map_lookup_elem(&sys_enter_sock_hash, &hash_id);
+  if (!fd) return 1;
   const struct sock* sock;
-  if (get_sock_from_fd(enter->fd, &sock)) return 1;
+  if (get_sock_from_fd(*fd, &sock)) return 1;
+  bpf_map_delete_elem(&sys_enter_sock_hash, &hash_id);
   return fill_and_send_sock(sock, sys_ret, event_type);
 }
 
@@ -166,74 +149,3 @@ int tracepoint__syscalls__sys_exit_accept4(struct syscall_trace_exit* ctx) {
   if (get_sock_from_fd(fd, &sock)) return 1;
   return fill_and_send_sock(sock, fd, SYS_ACCEPT);
 }
-
-#include <bpf/bpf_tracing.h>
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
-
-#ifdef KERNEL_TCP_CONNECT
-
-SEC("kprobe/tcp_connect")
-int BPF_KPROBE(tcp_connect, struct sock* sock) {
-  return fill_and_send_sock(sock, 0, KERNEL_TCP_CONNECT);
-}
-
-#endif  // KERNEL_TCP_CONNECT
-
-#if defined(KERNEL_UDP_CONNECT) || defined(KERNEL_UDPV6_CONNECT)
-
-/*
- * Map for sharing data between enter and exit sockets syscalls
- * tracepoints.
- */
-struct {
-  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-  __uint(max_entries, 1);
-  __type(key, u32);
-  __type(value, struct sock*);
-} datagram_sock_array SEC(".maps");
-
-#endif  // KERNEL_UDP_CONNECT || KERNEL_UDPV6_CONNECT
-
-#ifdef KERNEL_UDP_CONNECT
-
-SEC("kprobe/udp_connect")
-int BPF_KPROBE(udp_connect, struct sock* sock) {
-  struct sock** sock_elem =
-      bpf_map_lookup_elem(&datagram_sock_array, &array_index);
-  if (!sock_elem) return 1;
-  *sock_elem = sock;
-  return 0;
-}
-
-SEC("kretprobe/udp_connect")
-int BPF_KRETPROBE(udp_connect_exit, unsigned long long ret) {
-  struct sock** sock = bpf_map_lookup_elem(&datagram_sock_array, &array_index);
-  if (!sock) return 1;
-  return fill_and_send_sock(*sock, (int)ret, KERNEL_UDP_CONNECT);
-}
-
-#endif  // KERNEL_UDP_CONNECT
-
-#ifdef KERNEL_UDPV6_CONNECT
-
-SEC("kprobe/udpv6_connect")
-int BPF_KPROBE(udpv6_connect, struct sock* sock) {
-  struct sock** sock_elem =
-      bpf_map_lookup_elem(&datagram_sock_array, &array_index);
-  if (!sock_elem) return 1;
-  *sock_elem = sock;
-  return 0;
-}
-
-SEC("kretprobe/udpv6_connect")
-int BPF_KRETPROBE(udpv6_connect_exit, unsigned long long ret) {
-  struct sock** sock = bpf_map_lookup_elem(&datagram_sock_array, &array_index);
-  if (!sock) return 1;
-  return fill_and_send_sock(*sock, (int)ret, KERNEL_UDP_CONNECT);
-}
-
-#endif  // KERNEL_UDPV6_CONNECT
-
-#pragma clang diagnostic pop

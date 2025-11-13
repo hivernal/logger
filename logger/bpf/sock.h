@@ -3,17 +3,6 @@
 
 #include "logger/bpf/task.h"
 
-/*
- * Struct for sharing data between sys_enter_connect and sys_exit_connect,
- * sys_enter_accept and sys_exit_accept tracepoints.
- */
-struct sys_enter_sock {
-  /* Socket file descriptor. */
-  int fd;
-  /* Flag for checking errors. */
-  int is_correct;
-};
-
 /* Struct for the connect, accept syscalls. */
 struct sys_sock {
   struct task task;
@@ -22,7 +11,7 @@ struct sys_sock {
   /* IP family. AF_INET, AF_INET6. */
   sa_family_t family;
   int type;
-  /* Protocol type. TCP, UDP, ICMP... see /etc/protocols. */
+  /* Protocol type. TCP, UDP, SCTP... see /etc/protocols. */
   int protocol;
   /* Connection state. */
   unsigned char state;
