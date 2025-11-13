@@ -97,14 +97,14 @@ struct {
 
 
 /* Compares strings. Returns 0 if strings are equal. */
-FUNC_INLINE int bpf_strcmp(const char* s1, const char* s2, unsigned size) {
+FUNC_INLINE int bpfstrcmp(const char* s1, const char* s2, unsigned size) {
   if (!s1 || !s2) return -256;
   for (unsigned i = 0; i < size && *s1 && (*s1 == *s2); ++s1, ++s2, ++i);
   char c1 = *s1, c2 = *s2;
   return (int)(c1 - c2);
 }
 /* Compares strings. Returns 0 if s1 contains s2. */
-FUNC_INLINE int bpf_strcmp_contains(const char* s1, const char* s2,
+FUNC_INLINE int bpfstrcmp_contains(const char* s1, const char* s2,
                                     unsigned size) {
   if (!s1 || !s2) return -256;
   for (unsigned i = 0; i < size && *s1 && (*s1 == *s2); ++s1, ++s2, ++i);
@@ -122,25 +122,25 @@ FUNC_INLINE int is_file_with_buffer(const struct path_dentries* path_dentries) {
   unsigned offset = path_dentries->offset;
   if (offset >= sizeof(path_dentries->data)) return 0;
   unsigned size = sizeof(path_dentries->data) - offset;
-  if (bpf_strcmp_contains(&path_dentries->data[offset], "/etc/", size) != 0) {
+  if (bpfstrcmp_contains(&path_dentries->data[offset], "/etc/", size) != 0) {
     return FILE_TYPE_OTHER;
   }
   offset += sizeof("/etc/") - 1;
   if (offset >= sizeof(path_dentries->data)) return 0;
   size = sizeof(path_dentries->data) - offset;
-  if (bpf_strcmp(&path_dentries->data[offset], "passwd", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "passwd", size) == 0) {
     return FILE_TYPE_PASSWD;
   }
-  if (bpf_strcmp(&path_dentries->data[offset], "group", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "group", size) == 0) {
     return FILE_TYPE_GROUP;
   }
-  if (bpf_strcmp(&path_dentries->data[offset], "doas.conf", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "doas.conf", size) == 0) {
     return FILE_TYPE_DOAS;
   }
-  if (bpf_strcmp(&path_dentries->data[offset], "sudoers", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "sudoers", size) == 0) {
     return FILE_TYPE_SUDOERS;
   }
-  if (bpf_strcmp_contains(&path_dentries->data[offset], "sudoers.d/", size) ==
+  if (bpfstrcmp_contains(&path_dentries->data[offset], "sudoers.d/", size) ==
       0) {
     return FILE_TYPE_SUDOERS_DIR;
   }
