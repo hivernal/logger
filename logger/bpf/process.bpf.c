@@ -1,14 +1,6 @@
 #include "logger/bpf/helpers.h"
 #include "logger/bpf/process.h"
 
-/* Map for sharing data between enter and exit tracepoints. */
-struct {
-  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-  __uint(max_entries, 1);
-  __type(key, u32);
-  __type(value, struct sys_enter_process);
-} sys_enter_process_array SEC(".maps");
-
 /* Buffer for sending sys_execve data to userspace. */
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -27,6 +19,28 @@ struct {
   __uint(max_entries, NPROC * sizeof(struct sched_process_exit));
 } sched_process_exit_rb SEC(".maps");
 
+/* Map for sharing data between enter and exit tracepoints. */
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, u32);
+  __type(value, struct sys_enter_execve);
+} sys_enter_execve_array SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, struct sys_enter_execve);
+} sys_enter_execve_hash SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, u64);
+} sys_enter_clone_hash SEC(".maps");
+
 const int array_index = 0;
 
 /*
@@ -34,7 +48,7 @@ const int array_index = 0;
  * Returns written bytes on success and negative on errors.
  */
 FUNC_INLINE int read_argv(char* dst, const char** src) {
-  char* ptr;
+  const char* ptr;
   unsigned offset = 0;
   for (int i = 0; i < MAX_ARGS; ++i) {
     long ret = bpf_probe_read_user(&ptr, sizeof(ptr), &src[i]);
@@ -51,10 +65,9 @@ FUNC_INLINE int read_argv(char* dst, const char** src) {
 
 FUNC_INLINE int on_sys_enter_execve(int fd, const char* filename,
                                       const char** argv) {
-  struct sys_enter_process* enter =
-      bpf_map_lookup_elem(&sys_enter_process_array, &array_index);
+  struct sys_enter_execve* enter =
+      bpf_map_lookup_elem(&sys_enter_execve_array, &array_index);
   if (!enter) return 1;
-  enter->is_correct = 1;
   enter->error = 0;
   enter->fd = fd;
   long ret = bpf_probe_read_user_str(&enter->filename, sizeof(enter->filename),
@@ -62,8 +75,10 @@ FUNC_INLINE int on_sys_enter_execve(int fd, const char* filename,
   if (ret < 0) enter->error |= ERROR_FILENAME;
   if (read_argv(enter->argv, argv) < 0) {
     enter->error |= ERROR_ARGV;
-    return 1;
+    ret = -1;
   }
+  uint64_t id = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&sys_enter_execve_hash, &id, enter, BPF_ANY);
   if (ret < 0) return 1;
   return 0;
 }
@@ -89,10 +104,10 @@ FUNC_INLINE long fill_task_caps(struct task_caps* caps) {
 }
 
 FUNC_INLINE int on_sys_exit_execve(struct syscall_trace_exit* ctx) {
-  struct sys_enter_process* enter =
-      bpf_map_lookup_elem(&sys_enter_process_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  u64 id = bpf_get_current_pid_tgid();
+  struct sys_enter_execve* enter =
+      bpf_map_lookup_elem(&sys_enter_execve_hash, &id);
+  if (!enter) return 1;
   size_t reserved = sizeof(struct sys_execve);
   enum path_type filename_type = PATH_RELATIVE_FD;
   if (enter->filename[0] == '/') {
@@ -104,8 +119,7 @@ FUNC_INLINE int on_sys_exit_execve(struct syscall_trace_exit* ctx) {
   }
   struct sys_execve* sys_execve =
       bpf_ringbuf_reserve(&sys_execve_rb, reserved, 0);
-  if (!sys_execve) return 1;
-
+  if (!sys_execve) goto clean;
   int* error = &sys_execve->error;
   *error = enter->error;
   if (bpf_probe_read_kernel_str(&sys_execve->argv, sizeof(sys_execve->argv),
@@ -115,7 +129,6 @@ FUNC_INLINE int on_sys_exit_execve(struct syscall_trace_exit* ctx) {
                                 sizeof(sys_execve->filename),
                                 &enter->filename) < 0)
     *error |= ERROR_COPY_ENTER;
-
   if (filename_type == PATH_RELATIVE_FD &&
       (read_path_dentries_fd(
            enter->fd, &((struct sys_execveat*)sys_execve)->dir, 1) < 0)) {
@@ -127,6 +140,8 @@ FUNC_INLINE int on_sys_exit_execve(struct syscall_trace_exit* ctx) {
   sys_execve->ret = (int)ctx->ret;
   sys_execve->filename_type = filename_type;
   bpf_ringbuf_submit(sys_execve, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_execve_hash, &id);
   return 0;
 }
 
@@ -140,19 +155,14 @@ int tracepoint__syscalls__sys_exit_execveat(struct syscall_trace_exit* ctx) {
   return on_sys_exit_execve(ctx);
 }
 
-FUNC_INLINE int on_sys_enter_clone(uint64_t flags, int error) {
-  struct sys_enter_process* enter =
-      bpf_map_lookup_elem(&sys_enter_process_array, &array_index);
-  if (!enter) return 1;
-  enter->flags = flags;
-  enter->error = error;
-  enter->is_correct = 1;
-  return 0;
+FUNC_INLINE int on_sys_enter_clone(uint64_t flags) {
+  uint64_t id = bpf_get_current_pid_tgid();
+  return (int)bpf_map_update_elem(&sys_enter_clone_hash, &id, &flags, BPF_ANY);
 }
 
 SEC("tracepoint/syscalls/sys_enter_clone")
 int tracepoint__syscalls__sys_enter_clone(struct syscall_trace_enter* ctx) {
-  return on_sys_enter_clone((uint64_t)ctx->args[0], 0);
+  return on_sys_enter_clone((uint64_t)ctx->args[0]);
 }
 
 #ifdef SYS_CLONE3
@@ -160,28 +170,25 @@ SEC("tracepoint/syscalls/sys_enter_clone3")
 int tracepoint__syscalls__sys_enter_clone3(struct syscall_trace_enter* ctx) {
   struct clone_args* args = (struct clone_args*)ctx->args[0];
   uint64_t flags;
-  int error = 0;
-  if (bpf_core_read_user(&flags, sizeof(flags), &args->flags) < 0)
-    error |= ERROR_ARGV;
-  return on_sys_enter_clone(flags, error);
+  if (bpf_core_read_user(&flags, sizeof(flags), &args->flags) < 0) return 1;
+  return on_sys_enter_clone(flags);
 }
 #endif
 
-FUNC_INLINE int on_sys_exit_clone(int sys_clone_ret) {
-  struct sys_enter_process* enter =
-      bpf_map_lookup_elem(&sys_enter_process_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+FUNC_INLINE int on_sys_exit_clone(int ret) {
+  uint64_t id = bpf_get_current_pid_tgid();
+  uint64_t* flags = bpf_map_lookup_elem(&sys_enter_clone_hash, &id);
+  if (!flags) return 1;
   struct sys_clone* sys_clone =
       bpf_ringbuf_reserve(&sys_clone_rb, sizeof(*sys_clone), 0);
-  if (!sys_clone) return 1;
-
-  sys_clone->error = enter->error;
-  sys_clone->flags = enter->flags;
-
+  if (!sys_clone) goto clean;
+  sys_clone->error = 0;
+  sys_clone->flags = *flags;
   if (fill_task(&sys_clone->task) < 0) sys_clone->error |= ERROR_FILL_TASK;
-  sys_clone->ret = sys_clone_ret;
+  sys_clone->ret = ret;
   bpf_ringbuf_submit(sys_clone, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_clone_hash, &id);
   return 0;
 }
 

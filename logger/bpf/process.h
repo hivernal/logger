@@ -8,46 +8,6 @@
 #define ARGS_SIZE (ARG_SIZE * MAX_ARGS)
 #define LAST_ARG_OFFSET (ARGS_SIZE - ARG_SIZE)
 
-/* Struct contains sys_enter_execve and sys_enter_execveat data. */
-struct sys_enter_process {
-  int error;
-  /*
-   * The file descriptor of the  directory of the executable file.
-   * Can be the current working directory.
-   */
-  int fd;
-  /*
-   * A binary executable, or a script name.
-   * Relative to the directory reffered to by the file descriptor dfd.
-   */
-  char filename[PATH_SIZE];
-  /* sys_enter_execve, sys_enter_execveat argv. */ 
-  char argv[ARGS_SIZE];
-  /* sys_enter_clone, sys_enter_clone3 flags. */
-  uint64_t flags;
-  /* Flag for checking errors. */
-  int is_correct;
-};
-
-/* Struct contains sys_enter_execve and sys_enter_execveat data. */
-struct sys_enter_execve {
-  int error;
-  /*
-   * The file descriptor of the parent directory of the executable file.
-   * Can be the current working directory.
-   */
-  int dfd;
-  /*
-   * A binary executable, or a script name.
-   * Relative to the directory reffered to by the file descriptor dfd.
-   */
-  char filename[PATH_SIZE];
-  /* Arguments. */ 
-  char argv[ARGS_SIZE];
-  /* Flag for checking errors. */
-  int is_correct;
-};
-
 /*
  * P'(ambient) = (file is privileged) ? 0 : P(ambient)
  * P'(permitted) = (P(inheritable) & F(inheritable)) | (F(permitted) & P(bounding)) | P'(ambient)
@@ -77,24 +37,38 @@ struct task_caps {
   unsigned long long ambient; 
 };
 
-/* Struct for execve syscall. */
-struct sys_execve {
-  /* execve returned value. */
-  int ret;
-  struct task task;
+/* Struct contains sys_enter_execve and sys_enter_execveat data. */
+struct sys_enter_execve {
   /*
    * A binary executable, or a script name.
    * Relative to the directory reffered to by the file descriptor dfd.
    */
+  char filename[PATH_SIZE]; \
+  /* Arguments. */ 
+  char argv[ARGS_SIZE];
+  int error;
+  /*
+   * The file descriptor of the parent directory of the executable file.
+   * Can be the current working directory.
+   */
+  int fd;
+};
+
+/* Struct for execve syscall. */
+struct sys_execve {
+  /* A binary executable, or a script name. */
   char filename[PATH_SIZE];
   /* Arguments. */ 
   char argv[ARGS_SIZE];
+  int error;
+  /* execve returned value. */
+  int ret;
+  struct task task;
   enum path_type filename_type;
   /* Task capabilities. */
   struct task_caps caps;
   /* Current working directory of the task. */
   struct path_dentries cwd;
-  int error;
 };
 
 /* Struct for execveat syscall. */
