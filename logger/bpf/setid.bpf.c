@@ -13,42 +13,33 @@ struct {
  * setregid, setid, setresgid, setfsuid, setfsgid tracepoints.
  */
 struct {
-  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-  __uint(max_entries, 1);
-  __type(key, u32);
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
   __type(value, struct sys_enter_setid);
-} sys_enter_setid_array SEC(".maps");
+} sys_enter_setid_hash SEC(".maps");
 
 const int array_index = 0;
 
 FUNC_INLINE int on_sys_enter_setid1(uint32_t id) {
-  struct sys_enter_setid* enter =
-      bpf_map_lookup_elem(&sys_enter_setid_array, &array_index);
-  if (!enter) return 1;
-  enter->ids[0] = id;
-  enter->is_correct = 1;
-  return 0;
+  uint64_t hash_id = bpf_get_current_pid_tgid();
+  struct sys_enter_setid sys_setid = {.ids[0] = id};
+  return (int)bpf_map_update_elem(&sys_enter_setid_hash, &hash_id, &sys_setid,
+                                  BPF_ANY);
 };
 
 FUNC_INLINE int on_sys_enter_setid2(uint32_t id1, uint32_t id2) {
-  struct sys_enter_setid* enter =
-      bpf_map_lookup_elem(&sys_enter_setid_array, &array_index);
-  if (!enter) return 1;
-  enter->ids[0] = id1;
-  enter->ids[1] = id2;
-  enter->is_correct = 1;
-  return 0;
+  uint64_t hash_id = bpf_get_current_pid_tgid();
+  struct sys_enter_setid sys_setid = {.ids[0] = id1, .ids[1] = id2};
+  return (int)bpf_map_update_elem(&sys_enter_setid_hash, &hash_id, &sys_setid,
+                                  BPF_ANY);
 };
 
 FUNC_INLINE int on_sys_enter_setid3(uint32_t id1, uint32_t id2, uint32_t id3) {
-  struct sys_enter_setid* enter =
-      bpf_map_lookup_elem(&sys_enter_setid_array, &array_index);
-  if (!enter) return 1;
-  enter->ids[0] = id1;
-  enter->ids[1] = id2;
-  enter->ids[2] = id3;
-  enter->is_correct = 1;
-  return 0;
+  uint64_t hash_id = bpf_get_current_pid_tgid();
+  struct sys_enter_setid sys_setid = {.ids = {id1, id2, id3}};
+  return (int)bpf_map_update_elem(&sys_enter_setid_hash, &hash_id, &sys_setid,
+                                  BPF_ANY);
 };
 
 SEC("tracepoint/syscalls/sys_enter_setuid")
@@ -94,38 +85,40 @@ int tracepoint__syscalls__sys_enter_setfsgid(struct syscall_trace_enter* ctx) {
 }
 
 FUNC_INLINE int on_sys_exit_setid(int ret, int type) {
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
   struct sys_enter_setid* enter =
-      bpf_map_lookup_elem(&sys_enter_setid_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+      bpf_map_lookup_elem(&sys_enter_setid_hash, &hash_id);
+  if (!enter) return 1;
   struct sys_setid* sys_setid = NULL;
   if (type == SYS_SETUID || type == SYS_SETGID || type == SYS_SETFSUID ||
       type == SYS_SETFSGID) {
     sys_setid = bpf_ringbuf_reserve(
         &sys_setid_rb, sizeof(*sys_setid) + sizeof(enter->ids[0]), 0);
-    if (!sys_setid) return 1;
+    if (!sys_setid) goto clean;
     sys_setid->ids[0] = enter->ids[0];
   } else if (type == SYS_SETREUID || type == SYS_SETREGID) {
     sys_setid = bpf_ringbuf_reserve(
         &sys_setid_rb, sizeof(*sys_setid) + 2 * sizeof(enter->ids[0]), 0);
-    if (!sys_setid) return 1;
+    if (!sys_setid) goto clean;
     sys_setid->ids[0] = enter->ids[0];
     sys_setid->ids[1] = enter->ids[1];
   } else if (type == SYS_SETRESUID || type == SYS_SETRESGID) {
     sys_setid = bpf_ringbuf_reserve(
         &sys_setid_rb, sizeof(*sys_setid) + 3 * sizeof(enter->ids[0]), 0);
-    if (!sys_setid) return 1;
+    if (!sys_setid) goto clean;
     sys_setid->ids[0] = enter->ids[0];
     sys_setid->ids[1] = enter->ids[1];
     sys_setid->ids[2] = enter->ids[2];
   } else {
-    return 0;
+    goto clean;
   }
   sys_setid->ret = ret;
   sys_setid->event_type = type;
   sys_setid->error = 0;
   if (fill_task(&sys_setid->task) < 0) sys_setid->error |= ERROR_FILL_TASK;
   bpf_ringbuf_submit(sys_setid, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_setid_hash, &hash_id);
   return 0;
 }
 

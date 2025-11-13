@@ -10,8 +10,6 @@
  */
 struct sys_enter_setid {
   uint32_t ids[3];
-  /* Flag for checking errors. */
-  int is_correct;
 };
 
 /*

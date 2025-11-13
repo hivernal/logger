@@ -77,8 +77,8 @@ FUNC_INLINE int on_sys_enter_execve(int fd, const char* filename,
     enter->error |= ERROR_ARGV;
     ret = -1;
   }
-  uint64_t id = bpf_get_current_pid_tgid();
-  bpf_map_update_elem(&sys_enter_execve_hash, &id, enter, BPF_ANY);
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&sys_enter_execve_hash, &hash_id, enter, BPF_ANY);
   if (ret < 0) return 1;
   return 0;
 }
@@ -104,9 +104,9 @@ FUNC_INLINE long fill_task_caps(struct task_caps* caps) {
 }
 
 FUNC_INLINE int on_sys_exit_execve(struct syscall_trace_exit* ctx) {
-  u64 id = bpf_get_current_pid_tgid();
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
   struct sys_enter_execve* enter =
-      bpf_map_lookup_elem(&sys_enter_execve_hash, &id);
+      bpf_map_lookup_elem(&sys_enter_execve_hash, &hash_id);
   if (!enter) return 1;
   size_t reserved = sizeof(struct sys_execve);
   enum path_type filename_type = PATH_RELATIVE_FD;
@@ -141,7 +141,7 @@ FUNC_INLINE int on_sys_exit_execve(struct syscall_trace_exit* ctx) {
   sys_execve->filename_type = filename_type;
   bpf_ringbuf_submit(sys_execve, 0);
 clean:
-  bpf_map_delete_elem(&sys_enter_execve_hash, &id);
+  bpf_map_delete_elem(&sys_enter_execve_hash, &hash_id);
   return 0;
 }
 
@@ -156,8 +156,8 @@ int tracepoint__syscalls__sys_exit_execveat(struct syscall_trace_exit* ctx) {
 }
 
 FUNC_INLINE int on_sys_enter_clone(uint64_t flags) {
-  uint64_t id = bpf_get_current_pid_tgid();
-  return (int)bpf_map_update_elem(&sys_enter_clone_hash, &id, &flags, BPF_ANY);
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  return (int)bpf_map_update_elem(&sys_enter_clone_hash, &hash_id, &flags, BPF_ANY);
 }
 
 SEC("tracepoint/syscalls/sys_enter_clone")
@@ -176,8 +176,8 @@ int tracepoint__syscalls__sys_enter_clone3(struct syscall_trace_enter* ctx) {
 #endif
 
 FUNC_INLINE int on_sys_exit_clone(int ret) {
-  uint64_t id = bpf_get_current_pid_tgid();
-  uint64_t* flags = bpf_map_lookup_elem(&sys_enter_clone_hash, &id);
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  uint64_t* flags = bpf_map_lookup_elem(&sys_enter_clone_hash, &hash_id);
   if (!flags) return 1;
   struct sys_clone* sys_clone =
       bpf_ringbuf_reserve(&sys_clone_rb, sizeof(*sys_clone), 0);
@@ -188,7 +188,7 @@ FUNC_INLINE int on_sys_exit_clone(int ret) {
   sys_clone->ret = ret;
   bpf_ringbuf_submit(sys_clone, 0);
 clean:
-  bpf_map_delete_elem(&sys_enter_clone_hash, &id);
+  bpf_map_delete_elem(&sys_enter_clone_hash, &hash_id);
   return 0;
 }
 
