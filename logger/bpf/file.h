@@ -18,42 +18,6 @@ enum file_type {
   FILE_TYPE_SUDOERS_DIR,
 };
 
-struct sys_enter_file {
-  /* File descriptor. */
-  int fd;
-  /* New file descripto for rename, renameat, reanmeat2 syscalls. */
-  int newfd;
-  /* File name. */
-  char filename[PATH_SIZE];
-  /* New file name for rename, renameat, reanmeat2 syscalls. */
-  char newfilename[PATH_SIZE];
-  /* The number of bytes to be written to the file or readen from the file. */
-  size_t count;
-  /* The position to write or read. */
-  loff_t f_pos;
-  /* File flags. file.f_flags. */
-  unsigned f_flags;
-  /* File mode. file.f_mode. */
-  unsigned f_mode;
-  /* Path dentries. */
-  struct path_dentries path_dentries;
-  /* Syscalls flags arg. */
-  int flags;
-  /* Buffer for write syscall. */
-  char buffer[SYS_WRITE_BUFFER_SIZE];
-  /* Mode for chmod, fchmod, fchmodat syscalls. */
-  unsigned mode;
-  /* UID for chown, fchown, fchownat syscalls. */
-  uid_t uid;
-  /* GID for chown, fchown, fchownat syscalls. */
-  gid_t gid;
-  /* System file type. */
-  int file_type;
-  int error;
-  /* Flag to check errors between enter and exit tracepoints. */
-  int is_correct;
-};
-
 /* Struct for the write syscall. */
 struct sys_write {
   struct task task;
@@ -103,7 +67,7 @@ struct sys_unlink {
   /* On success, zero is returned. */
   int ret;
   int error;
-  int flags;
+  unsigned flags;
   /* File name. */
   char filename[PATH_SIZE];
 };
@@ -119,7 +83,7 @@ struct sys_unlinkat {
   enum path_type filename_type; \
   unsigned mode;                \
   int event_type;               \
-  int flags;                    \
+  unsigned flags;               \
   int error;                    \
   int ret
 
@@ -147,7 +111,7 @@ struct sys_fchmodat {
   uid_t uid;                    \
   gid_t gid;                    \
   int event_type;               \
-  int flags;                    \
+  unsigned flags;                    \
   int error;                    \
   int ret
 
@@ -177,8 +141,10 @@ struct sys_rename {
   char oldname[PATH_SIZE];
   char newname[PATH_SIZE];
   int event_type;
-  int flags;
+  unsigned flags;
   int error;
+  /* If oldfd == newfd. */
+  int samedir;
   int ret;
 };
 

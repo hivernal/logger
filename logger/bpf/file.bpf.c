@@ -1,24 +1,41 @@
 #include "logger/bpf/helpers.h"
 #include "logger/bpf/file.h"
 
-/*
- * Map for sharing data between
- * sys_enter_write and sys_exit_write,
- * sys_enter_read and sys_exit_read,
- * sys_enter_unlink and sys_exit_unlink,
- * sys_enter_unlinkat and sys_exit_unlinkat,
- * sys_enter_chmod and sys_exit_chmod,
- * sys_enter_fchmod and sys_exit_fchmod,
- * sys_enter_fchmodat and sys_exit_fchmodat,
- * sys_enter_fchmodat2 and sys_exit_fchmodat2
- * tracepoints.
- */
+/* sys_enter_write tracepoint data. */
+struct sys_enter_write {
+  char buffer[SYS_WRITE_BUFFER_SIZE];
+  /* File name. */
+  struct path_dentries file;
+  /* The number of bytes to be written to the file. */
+  size_t count;
+  /* The position to write. */
+  loff_t f_pos;
+  /* File flags. file.f_flags. */
+  unsigned f_flags;
+  /* File mode. file.f_mode. */
+  unsigned f_mode;
+  int error;
+  /*  Users and groups file type. */
+  int file_type;
+};
+
+/* Temporary sys_enter_write data storage. */
 struct {
   __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
   __uint(max_entries, 1);
   __type(key, u32);
-  __type(value, struct sys_enter_file);
-} sys_enter_file_array SEC(".maps");
+  __type(value, struct sys_enter_write);
+} sys_enter_write_array SEC(".maps");
+
+/*
+ Map for sharing data between sys_enter_write and sys_exit_write tracepoints
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, struct sys_enter_write);
+} sys_enter_write_hash SEC(".maps");
 
 /* Buffer for sending sys_write data to the userspace. */
 struct {
@@ -27,11 +44,65 @@ struct {
          NPROC * (sizeof(struct sys_write) + SYS_WRITE_BUFFER_SIZE));
 } sys_write_rb SEC(".maps");
 
+/* sys_enter_read tracepoint data. */
+struct sys_enter_read {
+  /* The number of bytes to be written to the file. */
+  size_t count;
+  /* The position to read. */
+  loff_t f_pos;
+  /* File flags. file.f_flags. */
+  unsigned f_flags;
+  /* File mode. file.f_mode. */
+  unsigned f_mode;
+  int error;
+  /* File descriptor. */
+  int fd;
+};
+
+/*
+ Map for sharing data between sys_enter_read and sys_exit_read tracepoints
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, struct sys_enter_read);
+} sys_enter_read_hash SEC(".maps");
+
 /* Buffer for sending sys_read data to the userspace. */
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_read));
 } sys_read_rb SEC(".maps");
+
+struct sys_enter_unlink {
+  /* File name. */
+  char filename[PATH_SIZE];
+  /* File descriptor for the sys_enter_unlinkat tracepoint. */
+  int fd;
+  /* AT_REMOVEDIR. */
+  unsigned flags;
+  int error;
+};
+
+/*
+ * Map for sharing data between sys_enter_unlink and sys_exit_unlink,
+ * sys_enter_unlinkat and sys_exit_unlinkat tracepoints.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, struct sys_enter_unlink);
+} sys_enter_unlink_hash SEC(".maps");
+
+/* Temporary data of sys_enter_unlink, sys_enter_unlinkat tracepoints. */
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, u32);
+  __type(value, struct sys_enter_unlink);
+} sys_enter_unlink_array SEC(".maps");
 
 /* Buffer for sending sys_unlink data to the userspace. */
 struct {
@@ -39,11 +110,91 @@ struct {
   __uint(max_entries, NPROC * sizeof(struct sys_unlinkat));
 } sys_unlink_rb SEC(".maps");
 
+struct sys_enter_chmod {
+  /*
+   * File descriptor for sys_enter_fchmod, sys_enter_fchmodat,
+   * sys_enter_fchmodat2 tracepoints.
+   */
+  int fd;
+  int error;
+  /* AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW. */
+  unsigned flags;
+  unsigned mode;
+  /* File name. */
+  char filename[PATH_SIZE];
+};
+
+/*
+ * Map for sharing data between
+ * sys_enter_chmod and sys_exit_chmod,
+ * sys_enter_fchmod and sys_exit_fchmod,
+ * sys_enter_fchmodat and sys_exit_fchmodat,
+ * sys_enter_fchmodat2 and sys_exit_fchmodat2
+ * tracepoints.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, struct sys_enter_chmod);
+} sys_enter_chmod_hash SEC(".maps");
+
+/*
+ * Temporary data storage for sys_enter_chmod, sys_enter_fchmod,
+ * sys_enter_fchmodat, sys_enter_fchmodat2 tracepoints.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, u32);
+  __type(value, struct sys_enter_chmod);
+} sys_enter_chmod_array SEC(".maps");
+
 /* Buffer for sending sys_chmod data to the userspace. */
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_fchmodat));
 } sys_chmod_rb SEC(".maps");
+
+struct sys_enter_chown {
+  /* File name. */
+  char filename[PATH_SIZE];
+  /* Target user ID. */
+  uid_t uid;
+  /* Target group ID. */
+  gid_t gid;
+  /* AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH. */
+  unsigned flags;
+  /* File descriptor. */
+  int fd;
+  int error;
+};
+
+/*
+ * Map for sharing data between
+ * sys_enter_chown and sys_exit_chown,
+ * sys_enter_fchown and sys_exit_fchown,
+ * sys_enter_lchown and sys_exit_lchown,
+ * sys_enter_fchownat and sys_exit_fchownat
+ * tracepoints.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, struct sys_enter_chown);
+} sys_enter_chown_hash SEC(".maps");
+
+/*
+ * Temporary data storage for sys_enter_chown, sys_enter_fchown,
+ * sys_enter_lchown, sys_enter_fchownat  tracepoints.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, u32);
+  __type(value, struct sys_enter_chown);
+} sys_enter_chown_array SEC(".maps");
 
 /* Buffer for sending sys_chown data to the userspace. */
 struct {
@@ -51,11 +202,52 @@ struct {
   __uint(max_entries, NPROC * sizeof(struct sys_fchownat));
 } sys_chown_rb SEC(".maps");
 
+struct sys_enter_rename {
+  /* Old file name. */
+  char oldname[PATH_SIZE];
+  /* New file name. */
+  char newname[PATH_SIZE];
+  /* RENAME_EXCHANGE, RENAME_NOREPLACE, RENAME_WHITEOUT. */
+  unsigned flags;
+  /* Old directory file descriptor. */
+  int oldfd;
+  /* New directory file descriptor. */
+  int newfd;
+  int error;
+};
+
+/*
+ * Map for sharing data between
+ * sys_enter_rename and sys_exit_rename,
+ * sys_enter_renameat and sys_exit_renameat,
+ * sys_enter_renameat2 and sys_exit_renameat2
+ * tracepoints.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 128);
+  __type(key, u64);
+  __type(value, struct sys_enter_rename);
+} sys_enter_rename_hash SEC(".maps");
+
+/*
+ * Temporary data storage for sys_enter_rename, sys_enter_renameat,
+ * sys_enter_renameat2 tracepoints.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, u32);
+  __type(value, struct sys_enter_rename);
+} sys_enter_rename_array SEC(".maps");
+
 /* Buffer for sending data to the userspace. */
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_renameat2));
 } sys_rename_rb SEC(".maps");
+
+#define AT_EMPTY_PATH 0x1000
 
 /* For file.f_inode->i_mode. */
 #define S_IFMT 00170000
@@ -95,7 +287,6 @@ struct {
 /* Is socket. */
 #define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
 
-
 /* Compares strings. Returns 0 if strings are equal. */
 FUNC_INLINE int bpfstrcmp(const char* s1, const char* s2, unsigned size) {
   if (!s1 || !s2) return -256;
@@ -105,7 +296,7 @@ FUNC_INLINE int bpfstrcmp(const char* s1, const char* s2, unsigned size) {
 }
 /* Compares strings. Returns 0 if s1 contains s2. */
 FUNC_INLINE int bpfstrcmp_contains(const char* s1, const char* s2,
-                                    unsigned size) {
+                                   unsigned size) {
   if (!s1 || !s2) return -256;
   for (unsigned i = 0; i < size && *s1 && (*s1 == *s2); ++s1, ++s2, ++i);
   char c1 = *s1, c2 = *s2;
@@ -156,29 +347,28 @@ pid_t logger_pid;
 
 FUNC_INLINE int on_sys_enter_write(int fd, const char* buffer, size_t count) {
   if (is_logger_pid()) return 0;
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
+  struct sys_enter_write* enter =
+      bpf_map_lookup_elem(&sys_enter_write_array, &array_index);
   if (!enter) return 1;
   enter->error = 0;
-  enter->is_correct = 0;
+  enter->count = count;
   const struct file* file;
   if (get_file_from_fd(fd, &file)) return 1;
   umode_t i_mode = BPF_CORE_READ(file, f_inode, i_mode);
   if (!S_ISREG(i_mode)) return 0;
-  if (read_path_dentries_fd(fd, &enter->path_dentries, 0) < 0)
+  if (read_path_dentries_fd(fd, &enter->file, 0) < 0)
     enter->error |= ERROR_READ_FD;
-  enter->file_type = is_file_with_buffer(&enter->path_dentries);
+  enter->file_type = is_file_with_buffer(&enter->file);
   if (enter->file_type &&
-      bpf_core_read_user_str(&enter->buffer,
-                             (unsigned)count & (sizeof(enter->buffer) - 1),
-                             buffer) < 0)
+      bpf_probe_read_user_str(&enter->buffer,
+                              (unsigned)count & (sizeof(enter->buffer) - 1),
+                              buffer) < 0)
     enter->error |= ERROR_FILL_BUFFER;
-  enter->fd = fd;
-  enter->count = count;
   enter->f_pos = BPF_CORE_READ(file, f_pos);
   enter->f_flags = BPF_CORE_READ(file, f_flags);
   enter->f_mode = BPF_CORE_READ(file, f_mode);
-  enter->is_correct = 1;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&sys_enter_write_hash, &hash_id, enter, BPF_ANY);
   return 0;
 }
 
@@ -196,29 +386,28 @@ int tracepoint__syscalls__sys_enter_write(struct syscall_trace_enter* ctx) {
   sys_write->f_mode = enter->f_mode;                                   \
   sys_write->file_type = enter->file_type;                             \
   if (bpf_probe_read_kernel(&sys_write->file, sizeof(sys_write->file), \
-                            &enter->path_dentries) < 0) {              \
+                            &enter->file) < 0) {                       \
     sys_write->error |= ERROR_COPY_ENTER;                              \
   }
 
 FUNC_INLINE int on_sys_exit_write(int ret) {
-  if (is_logger_pid()) return 0;
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  if ((pid_t)hash_id == logger_pid) return 0;
+  const struct sys_enter_write* enter =
+      bpf_map_lookup_elem(&sys_enter_write_hash, &hash_id);
+  if (!enter) return 1;
   unsigned buffer_size = 0;
-  if (enter->file_type != FILE_TYPE_OTHER) {
-    if (ret > 0) {
-      buffer_size = (unsigned)(ret + 1) & (SYS_WRITE_BUFFER_SIZE - 1);
-    } else {
-      buffer_size = SYS_WRITE_BUFFER_SIZE;
-    }
-  }
   size_t reserved_size = sizeof(struct sys_write);
-  if (buffer_size) reserved_size += SYS_WRITE_BUFFER_SIZE;
+  if (enter->file_type != FILE_TYPE_OTHER) {
+    reserved_size += SYS_WRITE_BUFFER_SIZE;
+    if (ret > 0)
+      buffer_size = (unsigned)(ret + 1) & (SYS_WRITE_BUFFER_SIZE - 1);
+    else
+      buffer_size = SYS_WRITE_BUFFER_SIZE;
+  }
   struct sys_write* sys_write =
       bpf_ringbuf_reserve(&sys_write_rb, reserved_size, 0);
-  if (!sys_write) return 1;
+  if (!sys_write) goto clean;
   copy_sys_enter_write(sys_write, enter);
   if (buffer_size && bpf_probe_read_kernel(&sys_write->buffer, buffer_size,
                                            &enter->buffer) < 0) {
@@ -227,6 +416,8 @@ FUNC_INLINE int on_sys_exit_write(int ret) {
   if (fill_task(&sys_write->task) < 0) sys_write->error |= ERROR_FILL_TASK;
   sys_write->ret = ret;
   bpf_ringbuf_submit(sys_write, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_write_hash, &hash_id);
   return 0;
 }
 
@@ -236,22 +427,20 @@ int tracepoint__syscalls__sys_exit_write(struct syscall_trace_exit* ctx) {
 }
 
 FUNC_INLINE int on_sys_enter_read(int fd, size_t count) {
-  if (is_logger_pid()) return 0;
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
-  if (!enter) return 1;
-  enter->error = 0;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  if ((pid_t)hash_id == logger_pid) return 0;
+  struct sys_enter_read enter;
+  enter.error = 0;
   const struct file* file;
   if (get_file_from_fd(fd, &file)) return 1;
   umode_t i_mode = BPF_CORE_READ(file, f_inode, i_mode);
   if (!S_ISREG(i_mode)) return 0;
-  enter->fd = fd;
-  enter->count = count;
-  enter->f_pos = BPF_CORE_READ(file, f_pos);
-  enter->f_flags = BPF_CORE_READ(file, f_flags);
-  enter->f_mode = BPF_CORE_READ(file, f_mode);
-  enter->is_correct = 1;
+  enter.fd = fd;
+  enter.count = count;
+  enter.f_pos = BPF_CORE_READ(file, f_pos);
+  enter.f_flags = BPF_CORE_READ(file, f_flags);
+  enter.f_mode = BPF_CORE_READ(file, f_mode);
+  bpf_map_update_elem(&sys_enter_read_hash, &hash_id, &enter, BPF_ANY);
   return 0;
 }
 
@@ -261,14 +450,14 @@ int tracepoint__syscalls__sys_enter_read(struct syscall_trace_enter* ctx) {
 }
 
 FUNC_INLINE int on_sys_exit_read(int sys_ret) {
-  if (is_logger_pid()) return 0;
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  if ((pid_t)hash_id == logger_pid) return 0;
+  struct sys_enter_read* enter =
+      bpf_map_lookup_elem(&sys_enter_read_hash, &hash_id);
+  if (!enter) return 1;
   struct sys_read* sys_read =
       bpf_ringbuf_reserve(&sys_read_rb, sizeof(*sys_read), 0);
-  if (!sys_read) return 1;
+  if (!sys_read) goto clean;
   sys_read->error = enter->error;
   sys_read->count = enter->count;
   sys_read->f_pos = enter->f_pos;
@@ -279,6 +468,8 @@ FUNC_INLINE int on_sys_exit_read(int sys_ret) {
   sys_read->ret = sys_ret;
   if (fill_task(&sys_read->task) < 0) sys_read->error |= ERROR_FILL_TASK;
   bpf_ringbuf_submit(sys_read, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_read_hash, &hash_id);
   return 0;
 }
 
@@ -287,17 +478,19 @@ int tracepoint__syscalls__sys_exit_read(struct syscall_trace_exit* ctx) {
   return on_sys_exit_read((int)ctx->ret);
 }
 
-FUNC_INLINE int on_sys_enter_unlink(int dfd, const char* filename, int flags) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
+FUNC_INLINE int on_sys_enter_unlink(int fd, const char* filename,
+                                    unsigned flags) {
+  struct sys_enter_unlink* enter =
+      bpf_map_lookup_elem(&sys_enter_unlink_array, &array_index);
   if (!enter) return 1;
   enter->error = 0;
-  if (bpf_core_read_user_str(&enter->filename, sizeof(enter->filename),
-                             filename) < 0)
+  if (bpf_probe_read_user_str(&enter->filename, sizeof(enter->filename),
+                              filename) < 0)
     enter->error |= ERROR_FILENAME;
-  enter->fd = dfd;
+  enter->fd = fd;
   enter->flags = flags;
-  enter->is_correct = 1;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&sys_enter_unlink_hash, &hash_id, enter, BPF_ANY);
   return 0;
 }
 
@@ -309,23 +502,23 @@ int tracepoint__syscalls__sys_enter_unlink(struct syscall_trace_enter* ctx) {
 SEC("tracepoint/syscalls/sys_enter_unlinkat")
 int tracepoint__syscalls__sys_enter_unlinkat(struct syscall_trace_enter* ctx) {
   return on_sys_enter_unlink((int)ctx->args[0], (const char*)ctx->args[1],
-                             (int)ctx->args[2]);
+                             (unsigned)ctx->args[2]);
 }
 
 FUNC_INLINE int on_sys_exit_unlink(int ret, int event_type) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  struct sys_enter_unlink* enter =
+      bpf_map_lookup_elem(&sys_enter_unlink_hash, &hash_id);
+  if (!enter) return 1;
   struct sys_unlink* sys_unlink;
   if (enter->filename[0] == '/') {
     sys_unlink = bpf_ringbuf_reserve(&sys_unlink_rb, sizeof(*sys_unlink), 0);
-    if (!sys_unlink) return 1;
+    if (!sys_unlink) goto clean;
     sys_unlink->filename_type = PATH_ABSOLUTE;
   } else {
     struct sys_unlinkat* sys_unlinkat =
         bpf_ringbuf_reserve(&sys_unlink_rb, sizeof(*sys_unlinkat), 0);
-    if (!sys_unlinkat) return 1;
+    if (!sys_unlinkat) goto clean;
     sys_unlink = &sys_unlinkat->sys_unlink;
     sys_unlink->filename_type = PATH_RELATIVE_FD;
     if (read_path_dentries_fd(enter->fd, &sys_unlinkat->dir, 1) < 0)
@@ -341,6 +534,8 @@ FUNC_INLINE int on_sys_exit_unlink(int ret, int event_type) {
   sys_unlink->ret = ret;
   if (fill_task(&sys_unlink->task) < 0) sys_unlink->error |= ERROR_FILL_TASK;
   bpf_ringbuf_submit(sys_unlink, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_unlink_hash, &hash_id);
   return 0;
 }
 
@@ -354,21 +549,35 @@ int tracepoint__syscalls__sys_exit_unlinkat(struct syscall_trace_exit* ctx) {
   return on_sys_exit_unlink((int)ctx->ret, SYS_UNLINKAT);
 }
 
+/*
+ * Returns 1 if fd is the directory. */
+FUNC_INLINE int is_dir_fd(int fd) {
+  const struct file* file;
+  if (get_file_from_fd(fd, &file)) return 1;
+  umode_t i_mode = BPF_CORE_READ(file, f_inode, i_mode);
+  if (S_ISDIR(i_mode)) return 1;
+  // if (S_ISREG(i_mode)) return 0;
+  else
+    return 0;
+}
+
 FUNC_INLINE int on_sys_enter_chmod(int fd, const char* filename, unsigned mode,
-                                   int flags) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
+                                   unsigned flags) {
+  struct sys_enter_chmod* enter =
+      bpf_map_lookup_elem(&sys_enter_chmod_array, &array_index);
   if (!enter) return 1;
   enter->error = 0;
   *enter->filename = 0;
-  if (bpf_core_read_user_str(&enter->filename, sizeof(enter->filename),
-                             filename) < 0) {
+  if (!(flags & AT_EMPTY_PATH) &&
+      bpf_probe_read_user_str(&enter->filename, sizeof(enter->filename),
+                              filename) < 0) {
     enter->error |= ERROR_FILENAME;
   }
   enter->fd = fd;
   enter->flags = flags;
   enter->mode = mode;
-  enter->is_correct = 1;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&sys_enter_chmod_hash, &hash_id, enter, BPF_ANY);
   return 0;
 }
 
@@ -380,7 +589,8 @@ int tracepoint__syscalls__sys_enter_chmod(struct syscall_trace_enter* ctx) {
 
 SEC("tracepoint/syscalls/sys_enter_fchmod")
 int tracepoint__syscalls__sys_enter_fchmod(struct syscall_trace_enter* ctx) {
-  return on_sys_enter_chmod((int)ctx->args[0], NULL, (unsigned)ctx->args[1], 0);
+  return on_sys_enter_chmod((int)ctx->args[0], NULL, (unsigned)ctx->args[1],
+                            AT_EMPTY_PATH);
 }
 
 SEC("tracepoint/syscalls/sys_enter_fchmodat")
@@ -392,19 +602,19 @@ int tracepoint__syscalls__sys_enter_fchmodat(struct syscall_trace_enter* ctx) {
 SEC("tracepoint/syscalls/sys_enter_fchmodat2")
 int tracepoint__syscalls__sys_enter_fchmodat2(struct syscall_trace_enter* ctx) {
   return on_sys_enter_chmod((int)ctx->args[0], (const char*)ctx->args[1],
-                            (unsigned)ctx->args[2], (int)ctx->args[3]);
+                            (unsigned)ctx->args[2], (unsigned)ctx->args[3]);
 }
 
 FUNC_INLINE int on_sys_exit_chmod(int ret, int event_type) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  struct sys_enter_chmod* enter =
+      bpf_map_lookup_elem(&sys_enter_chmod_hash, &hash_id);
+  if (!enter) return 1;
   struct sys_chmod* sys_chmod = NULL;
   if (enter->filename[0] == '/') {
     /* Path is absoulute. */
     sys_chmod = bpf_ringbuf_reserve(&sys_chmod_rb, sizeof(*sys_chmod), 0);
-    if (!sys_chmod) return 1;
+    if (!sys_chmod) goto clean;
     sys_chmod->filename_type = PATH_ABSOLUTE;
     if (bpf_probe_read_kernel_str(&sys_chmod->filename,
                                   sizeof(sys_chmod->filename),
@@ -414,16 +624,17 @@ FUNC_INLINE int on_sys_exit_chmod(int ret, int event_type) {
     /* Path is absoulute to the file descriptor. */
     struct sys_fchmod* sys_fchmod =
         bpf_ringbuf_reserve(&sys_chmod_rb, sizeof(*sys_fchmod), 0);
-    if (!sys_fchmod) return 1;
+    if (!sys_fchmod) goto clean;
     sys_chmod = (struct sys_chmod*)sys_fchmod;
     sys_chmod->filename_type = PATH_ABSOLUTE_FD;
-    if (read_path_dentries_fd(enter->fd, &sys_fchmod->file, 0) < 0)
+    if (read_path_dentries_fd(enter->fd, &sys_fchmod->file,
+                              is_dir_fd(enter->fd)) < 0)
       enter->error |= ERROR_READ_FD;
   } else {
     /* Path is relative to file descriptor (can be AT_FDCWD). */
     struct sys_fchmodat* sys_fchmodat =
         bpf_ringbuf_reserve(&sys_chmod_rb, sizeof(*sys_fchmodat), 0);
-    if (!sys_fchmodat) return 1;
+    if (!sys_fchmodat) goto clean;
     sys_chmod = &sys_fchmodat->sys_chmod;
     sys_chmod->filename_type = PATH_RELATIVE_FD;
     if (bpf_probe_read_kernel_str(&sys_chmod->filename,
@@ -440,6 +651,8 @@ FUNC_INLINE int on_sys_exit_chmod(int ret, int event_type) {
   sys_chmod->ret = ret;
   if (fill_task(&sys_chmod->task) < 0) sys_chmod->error |= ERROR_FILL_TASK;
   bpf_ringbuf_submit(sys_chmod, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_chmod_hash, &hash_id);
   return 0;
 }
 
@@ -464,20 +677,22 @@ int tracepoint__syscalls__sys_exit_fchmodat2(struct syscall_trace_exit* ctx) {
 }
 
 FUNC_INLINE int on_sys_enter_chown(int fd, const char* filename, uid_t uid,
-                                   gid_t gid, int flags) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
+                                   gid_t gid, unsigned flags) {
+  struct sys_enter_chown* enter =
+      bpf_map_lookup_elem(&sys_enter_chown_array, &array_index);
   if (!enter) return 1;
   enter->error = 0;
   *enter->filename = 0;
-  if (bpf_core_read_user_str(&enter->filename, sizeof(enter->filename),
-                             filename) < 0)
+  if (!(flags & AT_EMPTY_PATH) &&
+      bpf_probe_read_user_str(&enter->filename, sizeof(enter->filename),
+                              filename) < 0)
     enter->error |= ERROR_FILENAME;
   enter->fd = fd;
   enter->flags = flags;
   enter->uid = uid;
   enter->gid = gid;
-  enter->is_correct = 1;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&sys_enter_chown_hash, &hash_id, enter, BPF_ANY);
   return 0;
 }
 
@@ -497,19 +712,19 @@ SEC("tracepoint/syscalls/sys_enter_fchownat")
 int tracepoint__syscalls__sys_enter_fchownat(struct syscall_trace_enter* ctx) {
   return on_sys_enter_chown((int)ctx->args[0], (const char*)ctx->args[1],
                             (uid_t)ctx->args[2], (gid_t)ctx->args[3],
-                            (int)ctx->args[4]);
+                            (unsigned)ctx->args[4]);
 }
 
 FUNC_INLINE int on_sys_exit_chown(int ret, int event_type) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  struct sys_enter_chown* enter =
+      bpf_map_lookup_elem(&sys_enter_chown_hash, &hash_id);
+  if (!enter) return 1;
   struct sys_chown* sys_chown = NULL;
   if (enter->filename[0] == '/') {
     /* Path is absoulute. */
     sys_chown = bpf_ringbuf_reserve(&sys_chown_rb, sizeof(*sys_chown), 0);
-    if (!sys_chown) return 1;
+    if (!sys_chown) goto clean;
     sys_chown->filename_type = PATH_ABSOLUTE;
     if (bpf_probe_read_kernel_str(&sys_chown->filename,
                                   sizeof(sys_chown->filename),
@@ -519,16 +734,17 @@ FUNC_INLINE int on_sys_exit_chown(int ret, int event_type) {
     /* Path is absoulute to the file descriptor. */
     struct sys_fchown* sys_fchown =
         bpf_ringbuf_reserve(&sys_chown_rb, sizeof(*sys_fchown), 0);
-    if (!sys_fchown) return 1;
+    if (!sys_fchown) goto clean;
     sys_chown = (struct sys_chown*)sys_fchown;
     sys_chown->filename_type = PATH_ABSOLUTE_FD;
-    if (read_path_dentries_fd(enter->fd, &sys_fchown->file, 0) < 0)
+    if (read_path_dentries_fd(enter->fd, &sys_fchown->file,
+                              is_dir_fd(enter->fd)) < 0)
       enter->error |= ERROR_READ_FD;
   } else {
     /* Path is relative to file descriptor (can be AT_FDCWD). */
     struct sys_fchownat* sys_fchownat =
         bpf_ringbuf_reserve(&sys_chown_rb, sizeof(*sys_fchownat), 0);
-    if (!sys_fchownat) return 1;
+    if (!sys_fchownat) goto clean;
     sys_chown = &sys_fchownat->sys_chown;
     sys_chown->filename_type = PATH_RELATIVE_FD;
     if (bpf_probe_read_kernel_str(&sys_chown->filename,
@@ -546,6 +762,8 @@ FUNC_INLINE int on_sys_exit_chown(int ret, int event_type) {
   sys_chown->ret = ret;
   if (fill_task(&sys_chown->task) < 0) sys_chown->error |= ERROR_FILL_TASK;
   bpf_ringbuf_submit(sys_chown, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_chown_hash, &hash_id);
   return 0;
 }
 
@@ -565,21 +783,22 @@ int tracepoint__syscalls__sys_exit_fchownat(struct syscall_trace_exit* ctx) {
 }
 
 FUNC_INLINE int on_sys_enter_rename(int oldfd, int newfd, const char* oldname,
-                                    const char* newname, int flags) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
+                                    const char* newname, unsigned flags) {
+  struct sys_enter_rename* enter =
+      bpf_map_lookup_elem(&sys_enter_rename_array, &array_index);
   if (!enter) return 1;
   enter->error = 0;
-  if (bpf_core_read_user_str(&enter->filename, sizeof(enter->filename),
-                             oldname) < 0)
+  if (bpf_probe_read_user_str(&enter->oldname, sizeof(enter->oldname),
+                              oldname) < 0)
     enter->error |= ERROR_FILENAME;
-  if (bpf_core_read_user_str(&enter->newfilename, sizeof(enter->newfilename),
-                             newname) < 0)
+  if (bpf_probe_read_user_str(&enter->newname, sizeof(enter->newname),
+                              newname) < 0)
     enter->error |= ERROR_FILENAME;
-  enter->fd = oldfd;
+  enter->oldfd = oldfd;
   enter->newfd = newfd;
   enter->flags = flags;
-  enter->is_correct = 1;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&sys_enter_rename_hash, &hash_id, enter, BPF_ANY);
   return 0;
 }
 
@@ -600,30 +819,31 @@ SEC("tracepoint/syscalls/sys_enter_renameat2")
 int tracepoint__syscalls__sys_enter_renameat2(struct syscall_trace_enter* ctx) {
   return on_sys_enter_rename((int)ctx->args[0], (int)ctx->args[2],
                              (const char*)ctx->args[1],
-                             (const char*)ctx->args[3], (int)ctx->args[4]);
+                             (const char*)ctx->args[3], (unsigned)ctx->args[4]);
 }
 
 FUNC_INLINE int on_sys_exit_rename(int ret, int event_type) {
-  struct sys_enter_file* enter =
-      bpf_map_lookup_elem(&sys_enter_file_array, &array_index);
-  if (!enter || !enter->is_correct) return 1;
-  enter->is_correct = 0;
+  const uint64_t hash_id = bpf_get_current_pid_tgid();
+  struct sys_enter_rename* enter =
+      bpf_map_lookup_elem(&sys_enter_rename_hash, &hash_id);
+  if (!enter) return 1;
   struct sys_rename* sys_rename = NULL;
-  if (enter->filename[0] == '/' && enter->newfilename[0] == '/') {
+  if (enter->oldname[0] == '/' && enter->newname[0] == '/') {
     /* Old and new paths are absoulute. */
     sys_rename = bpf_ringbuf_reserve(&sys_rename_rb, sizeof(*sys_rename), 0);
-    if (!sys_rename) return 1;
+    if (!sys_rename) goto clean;
     sys_rename->oldname_type = PATH_ABSOLUTE;
     sys_rename->newname_type = PATH_ABSOLUTE;
-  } else if (enter->filename[0] != '/' && enter->newfilename[0] != '/') {
+  } else if (enter->oldname[0] != '/' && enter->newname[0] != '/' &&
+             enter->oldfd != enter->newfd) {
     /* New and old paths is relative to the file descriptors. */
     struct sys_renameat2* sys_renameat2 =
         bpf_ringbuf_reserve(&sys_rename_rb, sizeof(*sys_renameat2), 0);
-    if (!sys_renameat2) return 1;
+    if (!sys_renameat2) goto clean;
     sys_rename = &sys_renameat2->sys_rename;
     sys_rename->oldname_type = PATH_RELATIVE_FD;
     sys_rename->newname_type = PATH_RELATIVE_FD;
-    if (read_path_dentries_fd(enter->fd, &sys_renameat2->olddir, 1) < 0)
+    if (read_path_dentries_fd(enter->oldfd, &sys_renameat2->olddir, 1) < 0)
       enter->error |= ERROR_READ_FD;
     if (read_path_dentries_fd(enter->newfd, &sys_renameat2->newdir, 1) < 0)
       enter->error |= ERROR_READ_FD;
@@ -631,10 +851,15 @@ FUNC_INLINE int on_sys_exit_rename(int ret, int event_type) {
     /* Old or new path is relative to file descriptor and other is absolute. */
     struct sys_renameat* sys_renameat =
         bpf_ringbuf_reserve(&sys_rename_rb, sizeof(*sys_renameat), 0);
-    if (!sys_renameat) return 1;
+    if (!sys_renameat) goto clean;
     sys_rename = &sys_renameat->sys_rename;
     int fd;
-    if (enter->filename[0] == '/') {
+    if (enter->oldfd == enter->newfd) {
+      fd = enter->oldfd;
+      sys_rename->oldname_type = PATH_RELATIVE_FD;
+      sys_rename->newname_type = PATH_RELATIVE_FD;
+    }
+    else if (enter->oldname[0] == '/') {
       /* Old path is absoulute. New path is relative to the file descriptor. */
       sys_rename->oldname_type = PATH_ABSOLUTE;
       sys_rename->newname_type = PATH_RELATIVE_FD;
@@ -643,25 +868,28 @@ FUNC_INLINE int on_sys_exit_rename(int ret, int event_type) {
       /* New path is absoulute. Old path is relative to the file descriptor. */
       sys_rename->oldname_type = PATH_RELATIVE_FD;
       sys_rename->newname_type = PATH_ABSOLUTE;
-      fd = enter->fd;
+      fd = enter->oldfd;
     }
     if (read_path_dentries_fd(fd, &sys_renameat->dir, 1) < 0)
       enter->error |= ERROR_READ_FD;
   }
   if (bpf_probe_read_kernel_str(&sys_rename->oldname,
                                 sizeof(sys_rename->oldname),
-                                &enter->filename) < 0)
+                                &enter->oldname) < 0)
     enter->error |= ERROR_FILENAME;
   if (bpf_probe_read_kernel_str(&sys_rename->newname,
                                 sizeof(sys_rename->newname),
-                                &enter->newfilename) < 0)
+                                &enter->newname) < 0)
     enter->error |= ERROR_FILENAME;
+  sys_rename->samedir = enter->oldfd == enter->newfd;
   sys_rename->error = enter->error;
   sys_rename->flags = enter->flags;
   sys_rename->event_type = event_type;
   sys_rename->ret = ret;
   if (fill_task(&sys_rename->task) < 0) sys_rename->error |= ERROR_FILL_TASK;
   bpf_ringbuf_submit(sys_rename, 0);
+clean:
+  bpf_map_delete_elem(&sys_enter_rename_hash, &hash_id);
   return 0;
 }
 

@@ -361,7 +361,7 @@ void fprint_sys_unlink(FILE* file, const struct sys_unlink* sys_unlink) {
     const struct sys_unlinkat* sys_unlinkat = (struct sys_unlinkat*)sys_unlink;
     fprint_relative_filename(file, sys_unlink->filename, &sys_unlinkat->dir);
   }
-  fprintf(file, "\nret: %d\nflags: %d\nerror: 0x%x\n", sys_unlink->ret,
+  fprintf(file, "\nret: %d\nflags: 0x%x\nerror: 0x%x\n", sys_unlink->ret,
           sys_unlink->flags, sys_unlink->error);
   fprint_task(file, &sys_unlink->task);
   fputc('\n', file);
@@ -399,7 +399,7 @@ void fprint_sys_chmod(FILE* file, const struct sys_chmod* sys_chmod) {
     const struct sys_fchmodat* sys_fchmodat = (struct sys_fchmodat*)sys_chmod;
     fprint_relative_filename(file, sys_chmod->filename, &sys_fchmodat->dir);
   }
-  fprintf(file, "\nret: %d\nflags: %d\nmode: %.4o\nerror: 0x%x\n",
+  fprintf(file, "\nret: %d\nflags: 0x%x\nmode: %.4o\nerror: 0x%x\n",
           sys_chmod->ret, sys_chmod->flags, sys_chmod->mode, sys_chmod->error);
   fprint_task(file, &sys_chmod->task);
   fputc('\n', file);
@@ -512,18 +512,27 @@ int fprint_sys_renameat(FILE* file, const struct sys_renameat* sys_renameat,
   if (sys_rename->oldname_type == PATH_ABSOLUTE) {
     fprintf(file, "%s\nnewpath: ", sys_rename->oldname);
     struct list_head list = LIST_HEAD_INIT(list);
-    int newfile_type = FILE_TYPE_OTHER;
-    if (!dentry_ranges_init(&list, sys_rename->newname, &sys_renameat->dir)) {
-      newfile_type = get_dentry_ranges_file_type(&list);
+    if (!dentry_ranges_init(&list, sys_rename->newname, &sys_renameat->dir))
       fprint_dentry_ranges(file, &list);
-      *newdir = sys_renameat->dir.data + sys_renameat->dir.offset;
-    }
+    *newdir = sys_renameat->dir.data + sys_renameat->dir.offset;
+    fputc('\n', file);
+    int newfile_type = get_dentry_ranges_file_type(&list);
     dentry_ranges_delete(&list);
     return newfile_type;
   }
   fprint_relative_filename(file, sys_rename->oldname, &sys_renameat->dir);
-  fprintf(file, "\nnewpath: %s", sys_rename->newname);
-  return get_file_type(sys_rename->newname, sizeof(sys_rename->newname));
+  if (sys_rename->newname_type == PATH_ABSOLUTE) {
+    fprintf(file, "\nnewpath: %s", sys_rename->newname);
+    return get_file_type(sys_rename->newname, sizeof(sys_rename->newname));
+  }
+  fprintf(file, "\nnewpath: ");
+  struct list_head list = LIST_HEAD_INIT(list);
+  if (!dentry_ranges_init(&list, sys_rename->newname, &sys_renameat->dir))
+    fprint_dentry_ranges(file, &list);
+  *newdir = sys_renameat->dir.data + sys_renameat->dir.offset;
+  int newfile_type = get_dentry_ranges_file_type(&list);
+  dentry_ranges_delete(&list);
+  return newfile_type;
 }
 
 int fprint_sys_renameat2(FILE* file, const struct sys_renameat2* sys_renameat2,
@@ -560,15 +569,16 @@ void fprint_sys_rename(FILE* file, const struct sys_rename* sys_rename,
     fprintf(file, "%s\nnewpath: %s", sys_rename->oldname, sys_rename->newname);
     file_type = get_file_type(sys_rename->newname, sizeof(sys_rename->newname));
   } else if (sys_rename->oldname_type == PATH_RELATIVE_FD &&
-             sys_rename->newname_type == PATH_RELATIVE_FD) {
+             sys_rename->newname_type == PATH_RELATIVE_FD &&
+             !sys_rename->samedir) {
     file_type =
         fprint_sys_renameat2(file, (struct sys_renameat2*)sys_rename, &newdir);
   } else {
     file_type =
         fprint_sys_renameat(file, (struct sys_renameat*)sys_rename, &newdir);
   }
-  fprintf(file, "\nfile_type: %d\nret: %d\nflags: %d\nerror: 0x%x\n", file_type,
-          sys_rename->ret, sys_rename->flags, sys_rename->error);
+  fprintf(file, "\nret: %d\nflags: %d\nerror: 0x%x\n", sys_rename->ret,
+          sys_rename->flags, sys_rename->error);
   if (sys_rename->ret >= 0 && file_type != FILE_TYPE_OTHER) {
     struct text* text = text_dir_filename_init(newdir, sys_rename->newname);
     fprint_diff_files(file, data->users_groups, text, file_type);

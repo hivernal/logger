@@ -19,6 +19,24 @@ struct {
   __uint(max_entries, NPROC * sizeof(struct sched_process_exit));
 } sched_process_exit_rb SEC(".maps");
 
+/* Struct contains sys_enter_execve and sys_enter_execveat data. */
+struct sys_enter_execve {
+  /*
+   * A binary executable, or a script name.
+   * Relative to the directory reffered to by the file descriptor dfd.
+   */
+  char filename[PATH_SIZE]; \
+  /* Arguments. */ 
+  char argv[ARGS_SIZE];
+  int error;
+  /*
+   * The file descriptor of the parent directory of the executable file.
+   * Can be the current working directory.
+   */
+  int fd;
+};
+
+
 /* Map for sharing data between enter and exit tracepoints. */
 struct {
   __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
