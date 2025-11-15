@@ -120,17 +120,25 @@ struct bpf {
 
 /* Opens BPF application. */
 int bpf_open(struct bpf* bpf, const struct bpf_opts* opts) {
-  if (PROCESS_SKEL_DISABLED(opts)) bpf->process_skel = NULL;
-  else if (!(bpf->process_skel = process_bpf__open())) goto err;
+  if (PROCESS_SKEL_DISABLED(opts))
+    bpf->process_skel = NULL;
+  else if (!(bpf->process_skel = process_bpf__open()))
+    goto err;
 
-  if (FILE_SKEL_DISABLED(opts)) bpf->file_skel = NULL;
-  else if (!(bpf->file_skel = file_bpf__open())) goto err;
+  if (FILE_SKEL_DISABLED(opts))
+    bpf->file_skel = NULL;
+  else if (!(bpf->file_skel = file_bpf__open()))
+    goto err;
 
-  if (SETID_SKEL_DISABLED(opts)) bpf->setid_skel = NULL;
-  else if (!(bpf->setid_skel = setid_bpf__open())) goto err;
+  if (SETID_SKEL_DISABLED(opts))
+    bpf->setid_skel = NULL;
+  else if (!(bpf->setid_skel = setid_bpf__open()))
+    goto err;
 
-  if (SOCK_SKEL_DISABLED(opts)) bpf->sock_skel = NULL;
-  else if (!(bpf->sock_skel = sock_bpf__open())) goto err;
+  if (SOCK_SKEL_DISABLED(opts))
+    bpf->sock_skel = NULL;
+  else if (!(bpf->sock_skel = sock_bpf__open()))
+    goto err;
 
   if (bpf->file_skel) bpf->file_skel->bss->logger_pid = getpid();
   return 0;
@@ -139,17 +147,26 @@ err:
   return 1;
 }
 
-#define bpf_program_set_autoload_sys(skel, event)               \
-  bpf_program__set_autoload(                                    \
-      skel->progs.tracepoint__syscalls__sys_enter_##event,      \
-      opts->sys_##event##_enable);                              \
-  bpf_program__set_autoload(                                    \
-      skel->progs.tracepoint__syscalls__sys_exit_##event,       \
+#define bpf_program_set_autoload_sys(skel, event)          \
+  bpf_program__set_autoload(                               \
+      skel->progs.tracepoint__syscalls__sys_enter_##event, \
+      opts->sys_##event##_enable);                         \
+  bpf_program__set_autoload(                               \
+      skel->progs.tracepoint__syscalls__sys_exit_##event,  \
       opts->sys_##event##_enable)
 
-#define bpf_program_set_autoload_sched(skel, event)                      \
-  bpf_program__set_autoload(skel->progs.tracepoint__sched__##event,      \
+#define bpf_program_set_autoload_sched(skel, event)                 \
+  bpf_program__set_autoload(skel->progs.tracepoint__sched__##event, \
                             opts->event##_enable)
+
+#define bpf_map_set_autocreate_sys2(skel, event, val)        \
+  bpf_map__set_autocreate(skel->maps.sys_##event##_rb, val); \
+  bpf_map__set_autocreate(skel->maps.sys_enter_##event##_hash, val)
+
+#define bpf_map_set_autocreate_sys3(skel, event, val)                 \
+  bpf_map__set_autocreate(skel->maps.sys_##event##_rb, val);          \
+  bpf_map__set_autocreate(skel->maps.sys_enter_##event##_array, val); \
+  bpf_map__set_autocreate(skel->maps.sys_enter_##event##_hash, val)
 
 int set_autoload_file_skel(struct file_bpf* skel, const struct bpf_opts* opts) {
   if (!skel) return 0;
@@ -168,12 +185,12 @@ int set_autoload_file_skel(struct file_bpf* skel, const struct bpf_opts* opts) {
   bpf_program_set_autoload_sys(skel, rename);
   bpf_program_set_autoload_sys(skel, renameat);
   bpf_program_set_autoload_sys(skel, renameat2);
-  bpf_map__set_autocreate(skel->maps.sys_write_rb, WRITE_MAP_ENABLED(opts));
-  bpf_map__set_autocreate(skel->maps.sys_read_rb, READ_MAP_ENABLED(opts));
-  bpf_map__set_autocreate(skel->maps.sys_unlink_rb, UNLINK_MAP_ENABLED(opts));
-  bpf_map__set_autocreate(skel->maps.sys_chmod_rb, CHMOD_MAP_ENABLED(opts));
-  bpf_map__set_autocreate(skel->maps.sys_chown_rb, CHOWN_MAP_ENABLED(opts));
-  bpf_map__set_autocreate(skel->maps.sys_rename_rb, RENAME_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys3(skel, write, WRITE_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys2(skel, read, READ_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys3(skel, unlink, UNLINK_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys3(skel, chmod, CHMOD_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys3(skel, chown, CHOWN_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys3(skel, rename, RENAME_MAP_ENABLED(opts));
   return file_bpf__load(skel);
 }
 
@@ -185,8 +202,8 @@ int set_autoload_process_skel(struct process_bpf* skel,
   bpf_program_set_autoload_sys(skel, clone);
   bpf_program_set_autoload_sys(skel, clone3);
   bpf_program_set_autoload_sched(skel, sched_process_exit);
-  bpf_map__set_autocreate(skel->maps.sys_execve_rb, EXECVE_MAP_ENABLED(opts));
-  bpf_map__set_autocreate(skel->maps.sys_clone_rb, CLONE_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys3(skel, execve, EXECVE_MAP_ENABLED(opts));
+  bpf_map_set_autocreate_sys2(skel, clone, CLONE_MAP_ENABLED(opts));
   bpf_map__set_autocreate(skel->maps.sched_process_exit_rb,
                           SCHED_PROCESS_EXIT_MAP_ENABLED(opts));
   return process_bpf__load(skel);
@@ -296,9 +313,9 @@ int create_map_buffers(struct bpf* bpf, struct bpf_opts* opts) {
       map_buffer_new_or_add(&bpf->map_buffer, bpf->setid_skel, sys_setid,
                             &opts->sys_setid_log)) goto err;
 
-  if (bpf->sock_skel &&
-      map_buffer_new_or_add(&bpf->map_buffer, bpf->sock_skel, sys_sock,
-                            &opts->sys_sock_log)) goto err;
+  if (bpf->sock_skel && map_buffer_new_or_add(&bpf->map_buffer, bpf->sock_skel,
+                                              sys_sock, &opts->sys_sock_log))
+    goto err;
   return 0;
 err:
   fprintf(stderr, BPF_CREATE_RB_ERROR_MSG);
@@ -316,8 +333,8 @@ int bpf_poll_map_buffers(struct bpf* bpf, int time_ms) {
 }
 
 /*
- * Open, load, verify BPF application, attach tracepoint handler and create ring or perf
- * buffers.
+ * Open, load, verify BPF application, attach tracepoint handler and
+ * create ring or perf buffers.
  */
 struct bpf* bpf_init(struct bpf_opts* opts) {
   if (!opts) return NULL;
