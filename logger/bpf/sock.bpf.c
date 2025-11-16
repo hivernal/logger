@@ -10,7 +10,7 @@
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_sock6));
-} sys_sock_rb SEC(".maps");
+} sys_sock_buf SEC(".maps");
 
 /*
  * Map for sharing data between enter and exit sockets syscalls
@@ -90,13 +90,13 @@ FUNC_INLINE int fill_and_send_sock(const struct sock* sock, int sys_ret,
     return 0;
   if (family == AF_INET) {
     struct sys_sock4* sys_sock4 =
-        bpf_ringbuf_reserve(&sys_sock_rb, sizeof(*sys_sock4), 0);
+        bpf_ringbuf_reserve(&sys_sock_buf, sizeof(*sys_sock4), 0);
     if (!sys_sock4) return 1;
     sys_sock = (struct sys_sock*)sys_sock4;
     error = fill_sys_sock4(sys_sock4, sock);
   } else if (family == AF_INET6) {
     struct sys_sock6* sys_sock6 =
-        bpf_ringbuf_reserve(&sys_sock_rb, sizeof(*sys_sock6), 0);
+        bpf_ringbuf_reserve(&sys_sock_buf, sizeof(*sys_sock6), 0);
     if (!sys_sock6) return 1;
     sys_sock = (struct sys_sock*)sys_sock6;
     error = fill_sys_sock6(sys_sock6, sock);

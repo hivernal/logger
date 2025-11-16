@@ -18,6 +18,7 @@
 #include "logger/sock.h"
 #include "logger/hash.h"
 #include "logger/text.h"
+#include "logger/list.h"
 
 #define BPF_OPEN_ERROR_MSG "Failed to open BPF skeleton\n"
 #define BPF_LOAD_ERROR_MSG "Failed to load BPF skeleton\n"
@@ -30,6 +31,11 @@ static int libbpf_print_fn(enum libbpf_print_level level UNUSED,
                            const char* format, va_list args) {
   return vfprintf(stderr, format, args);
 }
+
+struct perf_buffer_node {
+  struct list_head node;
+  struct perf_buffer* buffer;
+};
 
 struct bpf {
   /* Skeletons. */
@@ -51,6 +57,7 @@ struct bpf {
 
   /* Ring buffer manager. */
   struct ring_buffer* map_buffer;
+  // struct list_head perf_buffer;
 
   /* Data of users and groups system files. */
   struct users_groups users_groups;
@@ -159,12 +166,12 @@ err:
   bpf_program__set_autoload(skel->progs.tracepoint__sched__##event, \
                             opts->event##_enable)
 
-#define bpf_map_set_autocreate_sys2(skel, event, val)        \
-  bpf_map__set_autocreate(skel->maps.sys_##event##_rb, val); \
+#define bpf_map_set_autocreate_sys2(skel, event, val)         \
+  bpf_map__set_autocreate(skel->maps.sys_##event##_buf, val); \
   bpf_map__set_autocreate(skel->maps.sys_enter_##event##_hash, val)
 
 #define bpf_map_set_autocreate_sys3(skel, event, val)                 \
-  bpf_map__set_autocreate(skel->maps.sys_##event##_rb, val);          \
+  bpf_map__set_autocreate(skel->maps.sys_##event##_buf, val);         \
   bpf_map__set_autocreate(skel->maps.sys_enter_##event##_array, val); \
   bpf_map__set_autocreate(skel->maps.sys_enter_##event##_hash, val)
 
@@ -204,7 +211,7 @@ int set_autoload_process_skel(struct process_bpf* skel,
   bpf_program_set_autoload_sched(skel, sched_process_exit);
   bpf_map_set_autocreate_sys3(skel, execve, EXECVE_MAP_ENABLED(opts));
   bpf_map_set_autocreate_sys2(skel, clone, CLONE_MAP_ENABLED(opts));
-  bpf_map__set_autocreate(skel->maps.sched_process_exit_rb,
+  bpf_map__set_autocreate(skel->maps.sched_process_exit_buf,
                           SCHED_PROCESS_EXIT_MAP_ENABLED(opts));
   return process_bpf__load(skel);
 }
@@ -268,50 +275,102 @@ int ring_buffer_new_or_add(struct ring_buffer** ring_buffer, int map_fd,
   return ring_buffer__add(*ring_buffer, map_fd, sample_cb, ctx);
 }
 
-#define map_buffer_new_or_add(buffer, skel, event, data_ptr)         \
-  ring_buffer_new_or_add(buffer, bpf_map__fd(skel->maps.event##_rb), \
+int perf_buffer_add(struct list_head* list, int map_fd, size_t page_cnt,
+                    perf_buffer_sample_fn sample_cb,
+                    perf_buffer_lost_fn lost_cb, void* ctx,
+                    const struct perf_buffer_opts* opts) {
+  struct perf_buffer_node* buffer_node = malloc(sizeof(*buffer_node));
+  if (!buffer_node) return 1;
+  buffer_node->buffer =
+      perf_buffer__new(map_fd, page_cnt, sample_cb, lost_cb, ctx, opts);
+  if (!buffer_node->buffer) {
+    return 1;
+    free(buffer_node);
+  }
+  list_add_tail(&buffer_node->node, list);
+  return 0;
+}
+
+#define perf_buffer__add(buffer, skel, event, data_ptr)                       \
+  perf_buffer_add(buffer, bpf_map__fd(skel->maps.event##_buf), 8, event##_cb, \
+                  NULL, data_ptr, NULL)
+
+#define map_buffer_new_or_add(buffer, skel, event, data_ptr)          \
+  ring_buffer_new_or_add(buffer, bpf_map__fd(skel->maps.event##_buf), \
                          event##_cb, data_ptr, NULL)
+
+int perf_buffer_poll(const struct list_head* list, int time) {
+  struct perf_buffer_node* c;
+  int ret = 0;
+  list_for_each_entry(c, list, node) {
+    ret |= perf_buffer__poll(c->buffer, time);
+  }
+  return ret;
+}
+
+#define map_buffer_poll(buffer, time) ring_buffer__poll(buffer, time)
+
+void perf_buffer_delete(struct list_head* list) {
+  struct perf_buffer_node *c, *n;
+  list_for_each_entry_safe(c, n, list, node) {
+    perf_buffer__free(c->buffer);
+    free(c);
+  }
+}
+
+#define map_buffer_free(buffer) ring_buffer__free(bpf->map_buffer)
 
 /* Create ring or perf buffers. */
 int create_map_buffers(struct bpf* bpf, struct bpf_opts* opts) {
   bpf->map_buffer = NULL;
+  // init_list_head(&bpf->perf_buffer);
   if (bpf->process_skel) {
     if (EXECVE_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->process_skel, sys_execve,
-                              &bpf->sys_execve_cb_data)) goto err;
+                              &bpf->sys_execve_cb_data))
+      goto err;
     if (CLONE_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->process_skel, sys_clone,
-                              &opts->sys_clone_log)) goto err;
+                              &opts->sys_clone_log))
+      goto err;
     if (SCHED_PROCESS_EXIT_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->process_skel,
                               sched_process_exit,
-                              &opts->sched_process_exit_log)) goto err;
+                              &opts->sched_process_exit_log))
+      goto err;
   }
 
   if (bpf->file_skel) {
     if (WRITE_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->file_skel, sys_write,
-                              &bpf->sys_write_cb_data)) goto err;
+                              &bpf->sys_write_cb_data))
+      goto err;
     if (READ_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->file_skel, sys_read,
-                              &opts->sys_read_log)) goto err;
+                              &opts->sys_read_log))
+      goto err;
     if (UNLINK_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->file_skel, sys_unlink,
-                              &opts->sys_unlink_log)) goto err;
+                              &opts->sys_unlink_log))
+      goto err;
     if (CHMOD_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->file_skel, sys_chmod,
-                              &opts->sys_chmod_log)) goto err;
+                              &opts->sys_chmod_log))
+      goto err;
     if (CHOWN_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->file_skel, sys_chown,
-                              &opts->sys_chown_log)) goto err;
+                              &opts->sys_chown_log))
+      goto err;
     if (RENAME_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->file_skel, sys_rename,
-                              &bpf->sys_rename_cb_data)) goto err;
+                              &bpf->sys_rename_cb_data))
+      goto err;
   }
 
   if (bpf->setid_skel &&
       map_buffer_new_or_add(&bpf->map_buffer, bpf->setid_skel, sys_setid,
-                            &opts->sys_setid_log)) goto err;
+                            &opts->sys_setid_log))
+    goto err;
 
   if (bpf->sock_skel && map_buffer_new_or_add(&bpf->map_buffer, bpf->sock_skel,
                                               sys_sock, &opts->sys_sock_log))
@@ -322,13 +381,16 @@ err:
   return 1;
 }
 
-#define map_buffer_poll(buffer, time) ring_buffer__poll(buffer, time)
-
 /* Poll data from ring or perf buffers. */
 int bpf_poll_map_buffers(struct bpf* bpf, int time_ms) {
   if (map_buffer_poll(bpf->map_buffer, time_ms) < 0) {
     return 1;
   }
+  /*
+  if (perf_buffer_poll(&bpf->perf_buffer, time_ms) < 0) {
+    return 1;
+  }
+  */
   return 0;
 }
 
@@ -359,8 +421,6 @@ clean:
   return NULL;
 }
 
-#define map_buffer_free(buffer) ring_buffer__free(bpf->map_buffer)
-
 /* Destroy BPF application. */
 void bpf_delete(struct bpf* bpf) {
   if (bpf->process_skel) process_bpf__destroy(bpf->process_skel);
@@ -368,6 +428,7 @@ void bpf_delete(struct bpf* bpf) {
   if (bpf->setid_skel) setid_bpf__destroy(bpf->setid_skel);
   if (bpf->sock_skel) sock_bpf__destroy(bpf->sock_skel);
   if (bpf->map_buffer) map_buffer_free(bpf->map_buffer);
+  // perf_buffer_delete(&bpf->perf_buffer);
   sys_execve_cb_data_delete(&bpf->sys_execve_cb_data);
   users_groups_delete(&bpf->users_groups);
   if (bpf) free(bpf);

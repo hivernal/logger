@@ -3,24 +3,18 @@
 
 #include "logger/bpf/task.h"
 
-/*
- * Struct contains sys_enter_setuid, sys_enter_setreuid, sys_enter_setresuid,
- * sys_enter_setgid, sys_enter_setregid, sys_enter_setresgid,
- * sys_enter_setfsuid, sys_enter_setfsgid, data.
- */
-struct sys_enter_setid {
-  uint32_t ids[3];
-};
+#define SYS_SETID_HEADER \
+  struct task task;      \
+  int error;             \
+  int event_type;        \
+  int ret
 
 /*
  * Struct for setuid, setreuid, setresuid, setgid, setregid, setresgid,
  * setfsuid, setfsgid.
  */
 struct sys_setid {
-  struct task task;
-  int error;
-  int event_type;
-  int ret;
+  SYS_SETID_HEADER;
   uint32_t ids[];
 };
 

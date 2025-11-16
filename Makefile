@@ -62,10 +62,13 @@ $(VMLINUX): $(BPFTOOL)
 	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@
 
 $(FEATURE_PROBE): $(BPFTOOL)
-	sudo $(BPFTOOL) feature probe full macro > $@
+	$(Q)echo "#ifndef LOGGER_BPF_FEATURE_PROBE_H_" > $@
+	$(Q)echo -e "#define LOGGER_BPF_FEATURE_PROBE_H_\n" >> $@
+	sudo $(BPFTOOL) feature probe full macro >> $@
 	$(Q)echo "#define LINUX_KERNEL_VERSION $(LINUX_KERNEL_VERSION)" >> $@
 	$(Q)echo "#define GET_LINUX_KERNEL_VERSION(a,b) (((a) << 16) + ((b) << 8))" >> $@
 	$(Q)echo "#define NPROC $(NPROC)" >> $@
+	$(Q)echo -e "\n#endif // LOGGER_BPF_FEATURE_PROBE_H_" >> $@
 
 
 

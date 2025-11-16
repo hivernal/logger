@@ -7,6 +7,7 @@
 #include <pwd.h>
 
 #include "logger/bpf/task.h"
+#include "logger/bpf/feature_probe.h"
 #include "logger/list.h"
 
 #define UNUSED __attribute__((unused))

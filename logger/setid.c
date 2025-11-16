@@ -15,7 +15,7 @@ void fprint_sys_setid(FILE* file, const struct sys_setid* sys_setid) {
             sys_setid->ids[0], sys_setid->ids[1]);
   } else if (sys_setid->event_type == SYS_SETRESUID) {
     fprintf(file,
-            "event: sys_setresuid\ntarget_uid: %u\netarget_uid: "
+            "event: sys_setresuid\ntarget_uid: %u\ntarget_uid: "
             "%u\ntarget_suid: %u\n",
             sys_setid->ids[0], sys_setid->ids[1], sys_setid->ids[2]);
   } else if (sys_setid->event_type == SYS_SETRESGID) {
@@ -33,7 +33,12 @@ void fprint_sys_setid(FILE* file, const struct sys_setid* sys_setid) {
   fputc('\n', file);
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 int sys_setid_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_setid_cb(void* ctx, int cpu UNUSED, void* data,
+                  unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sys_setid(file, data);

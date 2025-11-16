@@ -5,19 +5,19 @@
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_execveat));
-} sys_execve_rb SEC(".maps");
+} sys_execve_buf SEC(".maps");
 
 /* Buffer for sending sys_clone data to the userspace. */
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_clone));
-} sys_clone_rb SEC(".maps");
+} sys_clone_buf SEC(".maps");
 
 /* Buffer for sending sched_process_exit data to the userspace. */
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sched_process_exit));
-} sched_process_exit_rb SEC(".maps");
+} sched_process_exit_buf SEC(".maps");
 
 /* Struct contains sys_enter_execve and sys_enter_execveat data. */
 struct sys_enter_execve {
@@ -136,7 +136,7 @@ FUNC_INLINE int on_sys_exit_execve(struct syscall_trace_exit* ctx) {
     reserved = sizeof(struct sys_execveat);
   }
   struct sys_execve* sys_execve =
-      bpf_ringbuf_reserve(&sys_execve_rb, reserved, 0);
+      bpf_ringbuf_reserve(&sys_execve_buf, reserved, 0);
   if (!sys_execve) goto clean;
   int* error = &sys_execve->error;
   *error = enter->error;
@@ -198,7 +198,7 @@ FUNC_INLINE int on_sys_exit_clone(int ret) {
   uint64_t* flags = bpf_map_lookup_elem(&sys_enter_clone_hash, &hash_id);
   if (!flags) return 1;
   struct sys_clone* sys_clone =
-      bpf_ringbuf_reserve(&sys_clone_rb, sizeof(*sys_clone), 0);
+      bpf_ringbuf_reserve(&sys_clone_buf, sizeof(*sys_clone), 0);
   if (!sys_clone) goto clean;
   sys_clone->error = 0;
   sys_clone->flags = *flags;
@@ -226,7 +226,7 @@ SEC("tracepoint/sched/sched_process_exit")
 int tracepoint__sched__sched_process_exit(
     struct trace_event_raw_sched_process_exit* ctx) {
   struct sched_process_exit* sched_process_exit = bpf_ringbuf_reserve(
-      &sched_process_exit_rb, sizeof(*sched_process_exit), 0);
+      &sched_process_exit_buf, sizeof(*sched_process_exit), 0);
   if (!sched_process_exit) return 1;
   sched_process_exit->error = 0;
   sched_process_exit->exit_code = 0;

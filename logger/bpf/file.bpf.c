@@ -42,7 +42,7 @@ struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries,
          NPROC * (sizeof(struct sys_write) + SYS_WRITE_BUFFER_SIZE));
-} sys_write_rb SEC(".maps");
+} sys_write_buf SEC(".maps");
 
 /* sys_enter_read tracepoint data. */
 struct sys_enter_read {
@@ -73,7 +73,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_read));
-} sys_read_rb SEC(".maps");
+} sys_read_buf SEC(".maps");
 
 struct sys_enter_unlink {
   /* File name. */
@@ -108,7 +108,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_unlinkat));
-} sys_unlink_rb SEC(".maps");
+} sys_unlink_buf SEC(".maps");
 
 struct sys_enter_chmod {
   /*
@@ -154,7 +154,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_fchmodat));
-} sys_chmod_rb SEC(".maps");
+} sys_chmod_buf SEC(".maps");
 
 struct sys_enter_chown {
   /* File name. */
@@ -200,7 +200,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_fchownat));
-} sys_chown_rb SEC(".maps");
+} sys_chown_buf SEC(".maps");
 
 struct sys_enter_rename {
   /* Old file name. */
@@ -245,7 +245,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, NPROC * sizeof(struct sys_renameat2));
-} sys_rename_rb SEC(".maps");
+} sys_rename_buf SEC(".maps");
 
 #define AT_EMPTY_PATH 0x1000
 
@@ -406,7 +406,7 @@ FUNC_INLINE int on_sys_exit_write(int ret) {
       buffer_size = SYS_WRITE_BUFFER_SIZE;
   }
   struct sys_write* sys_write =
-      bpf_ringbuf_reserve(&sys_write_rb, reserved_size, 0);
+      bpf_ringbuf_reserve(&sys_write_buf, reserved_size, 0);
   if (!sys_write) goto clean;
   copy_sys_enter_write(sys_write, enter);
   if (buffer_size && bpf_probe_read_kernel(&sys_write->buffer, buffer_size,
@@ -456,7 +456,7 @@ FUNC_INLINE int on_sys_exit_read(int sys_ret) {
       bpf_map_lookup_elem(&sys_enter_read_hash, &hash_id);
   if (!enter) return 1;
   struct sys_read* sys_read =
-      bpf_ringbuf_reserve(&sys_read_rb, sizeof(*sys_read), 0);
+      bpf_ringbuf_reserve(&sys_read_buf, sizeof(*sys_read), 0);
   if (!sys_read) goto clean;
   sys_read->error = enter->error;
   sys_read->count = enter->count;
@@ -512,12 +512,12 @@ FUNC_INLINE int on_sys_exit_unlink(int ret, int event_type) {
   if (!enter) return 1;
   struct sys_unlink* sys_unlink;
   if (enter->filename[0] == '/') {
-    sys_unlink = bpf_ringbuf_reserve(&sys_unlink_rb, sizeof(*sys_unlink), 0);
+    sys_unlink = bpf_ringbuf_reserve(&sys_unlink_buf, sizeof(*sys_unlink), 0);
     if (!sys_unlink) goto clean;
     sys_unlink->filename_type = PATH_ABSOLUTE;
   } else {
     struct sys_unlinkat* sys_unlinkat =
-        bpf_ringbuf_reserve(&sys_unlink_rb, sizeof(*sys_unlinkat), 0);
+        bpf_ringbuf_reserve(&sys_unlink_buf, sizeof(*sys_unlinkat), 0);
     if (!sys_unlinkat) goto clean;
     sys_unlink = &sys_unlinkat->sys_unlink;
     sys_unlink->filename_type = PATH_RELATIVE_FD;
@@ -613,7 +613,7 @@ FUNC_INLINE int on_sys_exit_chmod(int ret, int event_type) {
   struct sys_chmod* sys_chmod = NULL;
   if (enter->filename[0] == '/') {
     /* Path is absoulute. */
-    sys_chmod = bpf_ringbuf_reserve(&sys_chmod_rb, sizeof(*sys_chmod), 0);
+    sys_chmod = bpf_ringbuf_reserve(&sys_chmod_buf, sizeof(*sys_chmod), 0);
     if (!sys_chmod) goto clean;
     sys_chmod->filename_type = PATH_ABSOLUTE;
     if (bpf_probe_read_kernel_str(&sys_chmod->filename,
@@ -623,7 +623,7 @@ FUNC_INLINE int on_sys_exit_chmod(int ret, int event_type) {
   } else if (!(*enter->filename)) {
     /* Path is absoulute to the file descriptor. */
     struct sys_fchmod* sys_fchmod =
-        bpf_ringbuf_reserve(&sys_chmod_rb, sizeof(*sys_fchmod), 0);
+        bpf_ringbuf_reserve(&sys_chmod_buf, sizeof(*sys_fchmod), 0);
     if (!sys_fchmod) goto clean;
     sys_chmod = (struct sys_chmod*)sys_fchmod;
     sys_chmod->filename_type = PATH_ABSOLUTE_FD;
@@ -633,7 +633,7 @@ FUNC_INLINE int on_sys_exit_chmod(int ret, int event_type) {
   } else {
     /* Path is relative to file descriptor (can be AT_FDCWD). */
     struct sys_fchmodat* sys_fchmodat =
-        bpf_ringbuf_reserve(&sys_chmod_rb, sizeof(*sys_fchmodat), 0);
+        bpf_ringbuf_reserve(&sys_chmod_buf, sizeof(*sys_fchmodat), 0);
     if (!sys_fchmodat) goto clean;
     sys_chmod = &sys_fchmodat->sys_chmod;
     sys_chmod->filename_type = PATH_RELATIVE_FD;
@@ -723,7 +723,7 @@ FUNC_INLINE int on_sys_exit_chown(int ret, int event_type) {
   struct sys_chown* sys_chown = NULL;
   if (enter->filename[0] == '/') {
     /* Path is absoulute. */
-    sys_chown = bpf_ringbuf_reserve(&sys_chown_rb, sizeof(*sys_chown), 0);
+    sys_chown = bpf_ringbuf_reserve(&sys_chown_buf, sizeof(*sys_chown), 0);
     if (!sys_chown) goto clean;
     sys_chown->filename_type = PATH_ABSOLUTE;
     if (bpf_probe_read_kernel_str(&sys_chown->filename,
@@ -733,7 +733,7 @@ FUNC_INLINE int on_sys_exit_chown(int ret, int event_type) {
   } else if (!(*enter->filename)) {
     /* Path is absoulute to the file descriptor. */
     struct sys_fchown* sys_fchown =
-        bpf_ringbuf_reserve(&sys_chown_rb, sizeof(*sys_fchown), 0);
+        bpf_ringbuf_reserve(&sys_chown_buf, sizeof(*sys_fchown), 0);
     if (!sys_fchown) goto clean;
     sys_chown = (struct sys_chown*)sys_fchown;
     sys_chown->filename_type = PATH_ABSOLUTE_FD;
@@ -743,7 +743,7 @@ FUNC_INLINE int on_sys_exit_chown(int ret, int event_type) {
   } else {
     /* Path is relative to file descriptor (can be AT_FDCWD). */
     struct sys_fchownat* sys_fchownat =
-        bpf_ringbuf_reserve(&sys_chown_rb, sizeof(*sys_fchownat), 0);
+        bpf_ringbuf_reserve(&sys_chown_buf, sizeof(*sys_fchownat), 0);
     if (!sys_fchownat) goto clean;
     sys_chown = &sys_fchownat->sys_chown;
     sys_chown->filename_type = PATH_RELATIVE_FD;
@@ -830,7 +830,7 @@ FUNC_INLINE int on_sys_exit_rename(int ret, int event_type) {
   struct sys_rename* sys_rename = NULL;
   if (enter->oldname[0] == '/' && enter->newname[0] == '/') {
     /* Old and new paths are absoulute. */
-    sys_rename = bpf_ringbuf_reserve(&sys_rename_rb, sizeof(*sys_rename), 0);
+    sys_rename = bpf_ringbuf_reserve(&sys_rename_buf, sizeof(*sys_rename), 0);
     if (!sys_rename) goto clean;
     sys_rename->oldname_type = PATH_ABSOLUTE;
     sys_rename->newname_type = PATH_ABSOLUTE;
@@ -838,7 +838,7 @@ FUNC_INLINE int on_sys_exit_rename(int ret, int event_type) {
              enter->oldfd != enter->newfd) {
     /* New and old paths is relative to the file descriptors. */
     struct sys_renameat2* sys_renameat2 =
-        bpf_ringbuf_reserve(&sys_rename_rb, sizeof(*sys_renameat2), 0);
+        bpf_ringbuf_reserve(&sys_rename_buf, sizeof(*sys_renameat2), 0);
     if (!sys_renameat2) goto clean;
     sys_rename = &sys_renameat2->sys_rename;
     sys_rename->oldname_type = PATH_RELATIVE_FD;
@@ -850,7 +850,7 @@ FUNC_INLINE int on_sys_exit_rename(int ret, int event_type) {
   } else {
     /* Old or new path is relative to file descriptor and other is absolute. */
     struct sys_renameat* sys_renameat =
-        bpf_ringbuf_reserve(&sys_rename_rb, sizeof(*sys_renameat), 0);
+        bpf_ringbuf_reserve(&sys_rename_buf, sizeof(*sys_renameat), 0);
     if (!sys_renameat) goto clean;
     sys_rename = &sys_renameat->sys_rename;
     int fd;
