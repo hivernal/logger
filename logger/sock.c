@@ -40,16 +40,23 @@ void fprint_sys_sock(FILE* file, const struct sys_sock* sys_sock) {
   } else {
     return;
   }
-  fprintf(file, "\nerror: 0x%x\nret: %d\nstate: %u\ntype: %d\n", sys_sock->error,
-          sys_sock->ret, sys_sock->state, sys_sock->type);
+  fprintf(file, "\nerror: 0x%x\nret: %d\nstate: %u\ntype: %d\n",
+          sys_sock->error, sys_sock->ret, sys_sock->state, sys_sock->type);
   const struct protoent* protocol = getprotobynumber(sys_sock->protocol);
-  if (protocol) fprintf(file, "protocol: %s\n", protocol->p_name);
-  else fprintf(file, "protocol: %d\n", sys_sock->protocol);
+  if (protocol)
+    fprintf(file, "protocol: %s\n", protocol->p_name);
+  else
+    fprintf(file, "protocol: %d\n", sys_sock->protocol);
   fprint_task(file, &sys_sock->task);
   fputc('\n', file);
 }
 
-int sys_sock_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
+#ifdef HAVE_RINGBUF_MAP_TYPE
+int sys_sock_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_sock_cb(void* ctx, int cpu UNUSED, void* data,
+                 unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sys_sock(file, data);
@@ -57,5 +64,7 @@ int sys_sock_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_sock(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
