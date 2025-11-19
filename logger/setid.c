@@ -46,5 +46,7 @@ void sys_setid_cb(void* ctx, int cpu UNUSED, void* data,
   } else {
     fprint_sys_setid(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }

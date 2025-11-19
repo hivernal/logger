@@ -124,25 +124,31 @@ void check_cap(FILE* file, unsigned long long cap) {
 
 void check_caps(FILE* file, const struct task_caps* caps) {
   fprintf(file, "capinh: 0x%llx", caps->inheritable);
-  //check_cap(file, caps->inheritable);
+  // check_cap(file, caps->inheritable);
   fputc('\n', file);
   fprintf(file, "capprm: 0x%llx", caps->permitted);
-  //check_cap(file, caps->permitted);
+  // check_cap(file, caps->permitted);
   fputc('\n', file);
   fprintf(file, "capeff: 0x%llx", caps->effective);
-  //check_cap(file, caps->effective);
+  // check_cap(file, caps->effective);
   fputc('\n', file);
   fprintf(file, "capbnd: 0x%llx", caps->bset);
-  //check_cap(file, caps->bset);
+  // check_cap(file, caps->bset);
   fputc('\n', file);
   fprintf(file, "capamb: 0x%llx", caps->ambient);
-  //check_cap(file, caps->ambient);
+  // check_cap(file, caps->ambient);
 }
 
 void fprint_sys_execve(FILE* file, const struct sys_execve* sys_execve,
                        const struct sys_execve_cb_data* data) {
   const struct hash* hash = data->hash;
-  fprintf(file, "event: sys_execve\n");
+  if (sys_execve->event_type == SYS_EXECVE) {
+    fprintf(file, "event: sys_execve\n");
+  } else if (sys_execve->event_type == SYS_EXECVEAT) {
+    fprintf(file, "event: sys_execveat\n");
+  } else {
+    return;
+  }
   fprintf(file, "filename: ");
   if (sys_execve->filename_type == PATH_ABSOLUTE) {
     fprintf(file, "%s", sys_execve->filename);
@@ -168,7 +174,12 @@ void fprint_sys_execve(FILE* file, const struct sys_execve* sys_execve,
   fputc('\n', file);
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 int sys_execve_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_execve_cb(void* ctx, int cpu UNUSED, void* data,
+                   unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(((struct sys_execve_cb_data*)ctx)->filename, "a");
   if (file) {
     fprint_sys_execve(file, data, ctx);
@@ -176,17 +187,31 @@ int sys_execve_cb(void* ctx, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_execve(stdout, data, ctx);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
 
 void fprint_sys_clone(FILE* file, const struct sys_clone* sys_clone) {
-  fprintf(file, "event: sys_clone\nflags: 0x%lx\nerror: 0x%x\n",
-          sys_clone->flags, sys_clone->error);
+  if (sys_clone->event_type == SYS_CLONE) {
+    fprintf(file, "event: sys_clone\n");
+  } else if (sys_clone->event_type == SYS_CLONE3) {
+    fprintf(file, "event: sys_clone3\n");
+  } else {
+    return;
+  }
+  fprintf(file, "flags: 0x%lx\nerror: 0x%x\n", sys_clone->flags,
+          sys_clone->error);
   fprint_task(file, &sys_clone->task);
   fputc('\n', file);
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 int sys_clone_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_clone_cb(void* ctx, int cpu UNUSED, void* data,
+                  unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sys_clone(file, data);
@@ -194,7 +219,9 @@ int sys_clone_cb(void* ctx, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_clone(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
 
 void fprint_sched_process_exit(
@@ -208,7 +235,12 @@ void fprint_sched_process_exit(
   fputc('\n', file);
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 int sched_process_exit_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sched_process_exit_cb(void* ctx, int cpu UNUSED, void* data,
+                           unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sched_process_exit(file, data);
@@ -216,5 +248,7 @@ int sched_process_exit_cb(void* ctx, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sched_process_exit(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }

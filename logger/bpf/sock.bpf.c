@@ -6,16 +6,18 @@
 /* IPV6. */
 #define AF_INET6 10
 
-#ifdef HAVE_RINGBUF_MAP_TYPE
 
 /* Buffer for sending sys_sock6 and sys_sock4 data to the userspace. */
 struct {
-  __uint(type, BPF_MAP_TYPE_RINGBUF);
-  __uint(max_entries, NPROC * sizeof(struct sys_sock6));
+#ifdef HAVE_RINGBUF_MAP_TYPE
+  RINGBUF_BODY(NPROC * sizeof(struct sys_sock6));
+#else
+  PERF_EVENT_ARRAY_BODY;
+#endif
 } sys_sock_buf SEC(".maps");
 
-#else
 
+#ifndef HAVE_RINGBUF_MAP_TYPE
 struct {
   __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
   __uint(max_entries, 1);
@@ -29,14 +31,6 @@ struct {
   __type(key, u32);
   __type(value, struct sys_sock6);
 } sys_sock6_array SEC(".maps");
-
-/* Buffer for sending sys_sock6 and sys_sock4 data to the userspace. */
-struct {
-  __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-  __uint(key_size, sizeof(u32));
-  __uint(value_size, sizeof(u32));
-} sys_sock_buf SEC(".maps");
-
 #endif
 
 /*

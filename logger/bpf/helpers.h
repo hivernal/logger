@@ -13,6 +13,26 @@
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
+#define RINGBUF_BODY(size)            \
+  __uint(type, BPF_MAP_TYPE_RINGBUF); \
+  __uint(max_entries, size)
+
+#define PERF_EVENT_ARRAY_BODY                  \
+  __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY); \
+  __uint(key_size, sizeof(u32));               \
+  __uint(value_size, sizeof(u32))
+
+#define RINGBUF_DECL(name, size) \
+  struct {                       \
+    RINGBUF_BODY(size);          \
+  } name SEC(".maps");
+
+#define PERF_EVENT_ARRAY_DECL(name) \
+  struct {                          \
+    PERF_EVENT_BODY;                \
+  } name SEC(".maps");
+
+
 enum helper_error {
   ENULLARG = 1,
   EATFDCWD,

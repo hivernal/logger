@@ -18,24 +18,27 @@ enum file_type {
   FILE_TYPE_SUDOERS_DIR,
 };
 
+#define SYS_WRITE_HEADER                               \
+  struct task task;                                    \
+  /* The number of bytes to be written to the file. */ \
+  size_t count;                                        \
+  /* The position to write. */                         \
+  loff_t f_pos;                                        \
+  /* File flags. file.f_flags. */                      \
+  unsigned f_flags;                                    \
+  /* File mode. file.f_mode. */                        \
+  unsigned f_mode;                                     \
+  int file_type;                                       \
+  /* File name. */                                     \
+  struct path_dentries file;                           \
+  /* The number of bytes written. */                   \
+  int ret;                                             \
+  int error;                                           \
+  int event_type
+
 /* Struct for the write syscall. */
 struct sys_write {
-  struct task task;
-  /* The number of bytes to be written to the file. */
-  size_t count;
-  /* The position to write. */
-  loff_t f_pos;
-  /* File flags. file.f_flags. */
-  unsigned f_flags;
-  /* File mode. file.f_mode. */
-  unsigned f_mode;
-  int file_type;
-  /* File name. */
-  struct path_dentries file;
-  /* The number of bytes written. */
-  int ret;
-  int error;
-  int event_type;
+  SYS_WRITE_HEADER;
   /* The written buffer. */
   char buffer[];
 };
@@ -111,7 +114,7 @@ struct sys_fchmodat {
   uid_t uid;                    \
   gid_t gid;                    \
   int event_type;               \
-  unsigned flags;                    \
+  unsigned flags;               \
   int error;                    \
   int ret
 
@@ -135,14 +138,14 @@ struct sys_fchownat {
 
 /* Struct for the rename syscall. */
 struct sys_rename {
+  char oldname[PATH_SIZE];
+  char newname[PATH_SIZE];
+  int error;
   struct task task;
   enum path_type newname_type;
   enum path_type oldname_type;
-  char oldname[PATH_SIZE];
-  char newname[PATH_SIZE];
   int event_type;
   unsigned flags;
-  int error;
   /* If oldfd == newfd. */
   int samedir;
   int ret;

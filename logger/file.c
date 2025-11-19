@@ -311,7 +311,12 @@ void fprint_sys_write(FILE* file, const struct sys_write* sys_write,
   fputc('\n', file);
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 int sys_write_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_write_cb(void* ctx, int cpu UNUSED, void* data,
+                  unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(((struct sys_write_rename_cb_data*)ctx)->filename, "a");
   if (file) {
     fprint_sys_write(file, data, ctx);
@@ -319,7 +324,9 @@ int sys_write_cb(void* ctx, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_write(stdout, data, ctx);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
 
 void fprint_sys_read(FILE* file, const struct sys_read* sys_read) {
@@ -336,7 +343,12 @@ void fprint_sys_read(FILE* file, const struct sys_read* sys_read) {
   fputc('\n', file);
 }
 
-int sys_read_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
+#ifdef HAVE_RINGBUF_MAP_TYPE
+int sys_read_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_read_cb(void* ctx, int cpu UNUSED, void* data,
+                 unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sys_read(file, data);
@@ -344,7 +356,9 @@ int sys_read_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_read(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
 
 void fprint_sys_unlink(FILE* file, const struct sys_unlink* sys_unlink) {
@@ -367,7 +381,12 @@ void fprint_sys_unlink(FILE* file, const struct sys_unlink* sys_unlink) {
   fputc('\n', file);
 }
 
-int sys_unlink_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
+#ifdef HAVE_RINGBUF_MAP_TYPE
+int sys_unlink_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_unlink_cb(void* ctx, int cpu UNUSED, void* data,
+                   unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sys_unlink(file, data);
@@ -375,7 +394,9 @@ int sys_unlink_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_unlink(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
 
 void fprint_sys_chmod(FILE* file, const struct sys_chmod* sys_chmod) {
@@ -405,7 +426,12 @@ void fprint_sys_chmod(FILE* file, const struct sys_chmod* sys_chmod) {
   fputc('\n', file);
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 int sys_chmod_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
+#else
+void sys_chmod_cb(void* ctx, int cpu UNUSED, void* data,
+                  unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sys_chmod(file, data);
@@ -413,7 +439,9 @@ int sys_chmod_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_chmod(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
 
 void fprint_sys_chown(FILE* file, const struct sys_chown* sys_chown) {
@@ -443,7 +471,12 @@ void fprint_sys_chown(FILE* file, const struct sys_chown* sys_chown) {
   fputc('\n', file);
 }
 
-int sys_chown_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
+#ifdef HAVE_RINGBUF_MAP_TYPE
+int sys_chown_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_chown_cb(void* ctx, int cpu UNUSED, void* data,
+                  unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(*(const char**)ctx, "a");
   if (file) {
     fprint_sys_chown(file, data);
@@ -451,7 +484,9 @@ int sys_chown_cb(void* ctx UNUSED, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_chown(stdout, data);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }
 
 int strcmp(const char* s1, const char* s2) {
@@ -587,7 +622,12 @@ void fprint_sys_rename(FILE* file, const struct sys_rename* sys_rename,
   fputc('\n', file);
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 int sys_rename_cb(void* ctx, void* data, size_t data_sz UNUSED) {
+#else
+void sys_rename_cb(void* ctx, int map UNUSED, void* data,
+                   unsigned data_sz UNUSED) {
+#endif
   FILE* file = fopen(((struct sys_write_rename_cb_data*)ctx)->filename, "a");
   if (file) {
     fprint_sys_rename(file, data, ctx);
@@ -595,5 +635,7 @@ int sys_rename_cb(void* ctx, void* data, size_t data_sz UNUSED) {
   } else {
     fprint_sys_rename(stdout, data, ctx);
   }
+#ifdef HAVE_RINGBUF_MAP_TYPE
   return 0;
+#endif
 }

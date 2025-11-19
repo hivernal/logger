@@ -48,6 +48,7 @@ struct sys_execve {
   int ret;
   struct task task;
   enum path_type filename_type;
+  int event_type;
   /* Task capabilities. */
   struct task_caps caps;
   /* Current working directory of the task. */
@@ -68,6 +69,7 @@ struct sys_execveat {
 struct sys_clone {
   struct task task;
   uint64_t flags;
+  int event_type;
   int error;
   int ret;
 };

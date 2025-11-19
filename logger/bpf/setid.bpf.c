@@ -21,17 +21,17 @@ struct {
   __type(value, struct sys_enter_setid);
 } sys_enter_setid_hash SEC(".maps");
 
-#ifdef HAVE_RINGBUF_MAP_TYPE
-
 /* Buffer for sending sys_setid data to the userspace. */
 struct {
-  __uint(type, BPF_MAP_TYPE_RINGBUF);
-  __uint(max_entries,
-         NPROC * (sizeof(struct sys_setid) + sizeof(struct sys_enter_setid)));
+#ifdef HAVE_RINGBUF_MAP_TYPE
+  RINGBUF_BODY(NPROC *
+               (sizeof(struct sys_setid) + sizeof(struct sys_enter_setid)));
+#else
+  PERF_EVENT_ARRAY_BODY;
+#endif
 } sys_setid_buf SEC(".maps");
 
-#else
-
+#ifndef HAVE_RINGBUF_MAP_TYPE
 struct sys_setid3 {
   SYS_SETID_HEADER;
   uint32_t ids[3];
@@ -43,15 +43,6 @@ struct {
   __type(key, u32);
   __type(value, struct sys_setid3);
 } sys_setid_array SEC(".maps");
-
-struct {
-  __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-  __uint(key_size, sizeof(u32));
-  __uint(value_size, sizeof(u32));
-} sys_setid_buf SEC(".maps");
-
-const int array_index = 0;
-
 #endif
 
 FUNC_INLINE int on_sys_enter_setid1(uint32_t id) {
@@ -126,7 +117,6 @@ int tracepoint__syscalls__sys_enter_setfsgid(struct syscall_trace_enter* ctx) {
 #define IS_SETID3(type) ((type) == SYS_SETRESUID || (type) == SYS_SETRESGID)
 
 #ifdef HAVE_RINGBUF_MAP_TYPE
-
 FUNC_INLINE int on_sys_exit_setid(int ret, int type) {
   const uint64_t hash_id = bpf_get_current_pid_tgid();
   struct sys_enter_setid* enter =
@@ -165,8 +155,8 @@ clean:
 }
 
 #else
-
 FUNC_INLINE int on_sys_exit_setid(struct syscall_trace_exit* ctx, int type) {
+  const int array_index = 0;
   const uint64_t hash_id = bpf_get_current_pid_tgid();
   struct sys_enter_setid* enter =
       bpf_map_lookup_elem(&sys_enter_setid_hash, &hash_id);
@@ -177,30 +167,25 @@ FUNC_INLINE int on_sys_exit_setid(struct syscall_trace_exit* ctx, int type) {
   sys_setid->ret = (int)ctx->ret;
   sys_setid->event_type = type;
   sys_setid->error = 0;
-  int cnt = 0;
   if (fill_task(&sys_setid->task) < 0) sys_setid->error |= ERROR_FILL_TASK;
   if (IS_SETID1(type)) {
     sys_setid->ids[0] = enter->ids[0];
-    cnt = 1;
   } else if (IS_SETID2(type)) {
     sys_setid->ids[0] = enter->ids[0];
     sys_setid->ids[1] = enter->ids[1];
-    cnt = 2;
   } else if (IS_SETID3(type)) {
     sys_setid->ids[0] = enter->ids[0];
     sys_setid->ids[1] = enter->ids[1];
     sys_setid->ids[2] = enter->ids[2];
-    cnt = 3;
   } else {
     goto clean;
   }
   bpf_perf_event_output(ctx, &sys_setid_buf, BPF_F_CURRENT_CPU, sys_setid,
-                        sizeof(struct sys_setid) + cnt * sizeof(enter->ids[0]));
+                        sizeof(*sys_setid));
 clean:
   bpf_map_delete_elem(&sys_enter_setid_hash, &hash_id);
   return 0;
 }
-
 #endif
 
 SEC("tracepoint/syscalls/sys_exit_setuid")

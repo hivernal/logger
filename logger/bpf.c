@@ -55,9 +55,12 @@ struct bpf {
   /* sys_connect, sys_accept, sys_accept4 skeleton object. */
   struct sock_bpf* sock_skel;
 
-  /* Ring buffer manager. */
+  /* Buffer manager. */
+#ifdef HAVE_RINGBUF_MAP_TYPE
   struct ring_buffer* map_buffer;
-  // struct list_head perf_buffer;
+#else
+  struct list_head map_buffer;
+#endif
 
   /* Data of users and groups system files. */
   struct users_groups users_groups;
@@ -198,6 +201,18 @@ int set_autoload_file_skel(struct file_bpf* skel, const struct bpf_opts* opts) {
   bpf_map_set_autocreate_sys3(skel, chmod, CHMOD_MAP_ENABLED(opts));
   bpf_map_set_autocreate_sys3(skel, chown, CHOWN_MAP_ENABLED(opts));
   bpf_map_set_autocreate_sys3(skel, rename, RENAME_MAP_ENABLED(opts));
+  /* sys_read_array for perf buffer. */
+  /* sys_fchmod_array, sys_fchmodat_array for perf buffer */
+  /* sys_fchown_array, sys_fchownat_array for perf buffer */
+#ifndef HAVE_RINGBUF_MAP_TYPE
+  bpf_map__set_autocreate(skel->maps.sys_read_array, READ_MAP_ENABLED(opts));
+  bpf_map__set_autocreate(skel->maps.sys_fchmod_array, CHMOD_MAP_ENABLED(opts));
+  bpf_map__set_autocreate(skel->maps.sys_fchmodat_array,
+                          CHMOD_MAP_ENABLED(opts));
+  bpf_map__set_autocreate(skel->maps.sys_fchown_array, CHOWN_MAP_ENABLED(opts));
+  bpf_map__set_autocreate(skel->maps.sys_fchownat_array,
+                          CHOWN_MAP_ENABLED(opts));
+#endif
   return file_bpf__load(skel);
 }
 
@@ -291,13 +306,15 @@ int perf_buffer_add(struct list_head* list, int map_fd, size_t page_cnt,
   return 0;
 }
 
-#define perf_buffer__add(buffer, skel, event, data_ptr)                       \
-  perf_buffer_add(buffer, bpf_map__fd(skel->maps.event##_buf), 8, event##_cb, \
-                  NULL, data_ptr, NULL)
-
+#ifdef HAVE_RINGBUF_MAP_TYPE
 #define map_buffer_new_or_add(buffer, skel, event, data_ptr)          \
   ring_buffer_new_or_add(buffer, bpf_map__fd(skel->maps.event##_buf), \
                          event##_cb, data_ptr, NULL)
+#else
+#define map_buffer_new_or_add(buffer, skel, event, data_ptr)                  \
+  perf_buffer_add(buffer, bpf_map__fd(skel->maps.event##_buf), 8, event##_cb, \
+                  NULL, data_ptr, NULL)
+#endif
 
 int perf_buffer_poll(const struct list_head* list, int time) {
   struct perf_buffer_node* c;
@@ -308,7 +325,11 @@ int perf_buffer_poll(const struct list_head* list, int time) {
   return ret;
 }
 
+#ifdef HAVE_RINGBUF_MAP_TYPE
 #define map_buffer_poll(buffer, time) ring_buffer__poll(buffer, time)
+#else
+#define map_buffer_poll(buffer, time) perf_buffer_poll(&buffer, time)
+#endif
 
 void perf_buffer_delete(struct list_head* list) {
   struct perf_buffer_node *c, *n;
@@ -318,12 +339,20 @@ void perf_buffer_delete(struct list_head* list) {
   }
 }
 
-#define map_buffer_free(buffer) ring_buffer__free(bpf->map_buffer)
+#ifdef HAVE_RINGBUF_MAP_TYPE
+#define map_buffer_free(map_buffer) \
+  if (map_buffer) ring_buffer__free(map_buffer)
+#else
+#define map_buffer_free(map_buffer) perf_buffer_delete(&map_buffer)
+#endif
 
 /* Create ring or perf buffers. */
 int create_map_buffers(struct bpf* bpf, struct bpf_opts* opts) {
+#ifdef HAVE_RINGBUF_MAP_TYPE
   bpf->map_buffer = NULL;
-  // init_list_head(&bpf->perf_buffer);
+#else
+  init_list_head(&bpf->map_buffer);
+#endif
   if (bpf->process_skel) {
     if (EXECVE_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->process_skel, sys_execve,
@@ -386,11 +415,6 @@ int bpf_poll_map_buffers(struct bpf* bpf, int time_ms) {
   if (map_buffer_poll(bpf->map_buffer, time_ms) < 0) {
     return 1;
   }
-  /*
-  if (perf_buffer_poll(&bpf->perf_buffer, time_ms) < 0) {
-    return 1;
-  }
-  */
   return 0;
 }
 
@@ -427,8 +451,7 @@ void bpf_delete(struct bpf* bpf) {
   if (bpf->file_skel) file_bpf__destroy(bpf->file_skel);
   if (bpf->setid_skel) setid_bpf__destroy(bpf->setid_skel);
   if (bpf->sock_skel) sock_bpf__destroy(bpf->sock_skel);
-  if (bpf->map_buffer) map_buffer_free(bpf->map_buffer);
-  // perf_buffer_delete(&bpf->perf_buffer);
+  map_buffer_free(bpf->map_buffer);
   sys_execve_cb_data_delete(&bpf->sys_execve_cb_data);
   users_groups_delete(&bpf->users_groups);
   if (bpf) free(bpf);
