@@ -3,9 +3,9 @@
 
 #include "logger/bpf/task.h"
 
-#define ARG_SIZE 128
-#define MAX_ARGS 64
-#define ARGS_SIZE (ARG_SIZE * MAX_ARGS)
+#define ARG_SIZE 256
+#define MAX_ARGS 128
+#define ARGS_SIZE ((ARG_SIZE * MAX_ARGS)/4)
 #define LAST_ARG_OFFSET (ARGS_SIZE - ARG_SIZE)
 
 /*

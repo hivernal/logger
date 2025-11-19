@@ -83,6 +83,9 @@ struct {
 FUNC_INLINE int read_argv(char* dst, const char** src) {
   const char* ptr;
   unsigned offset = 0;
+#ifndef HAVE_BOUNDED_LOOPS
+#pragma unroll
+#endif
   for (int i = 0; i < MAX_ARGS; ++i) {
     long ret = bpf_probe_read_user(&ptr, sizeof(ptr), &src[i]);
     if (ret < 0) return -1;

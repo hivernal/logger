@@ -370,19 +370,19 @@ struct {
 #define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
 
 /* Compares strings. Returns 0 if strings are equal. */
-FUNC_INLINE int bpfstrcmp(const char* s1, const char* s2, unsigned size) {
+FUNC_INLINE int bpfstrcmp(const char* s1, const char* s2,
+                          unsigned size UNUSED, int contains) {
   if (!s1 || !s2) return -256;
+#ifdef HAVE_BOUNDED_LOOPS
   for (unsigned i = 0; i < size && *s1 && (*s1 == *s2); ++s1, ++s2, ++i);
+#else
+  unsigned max_size = 256;
+#pragma unroll
+  for (unsigned i = 0; i < max_size && *s1 && (*s1 == *s2);
+       ++s1, ++s2, ++i);
+#endif
   char c1 = *s1, c2 = *s2;
-  return (int)(c1 - c2);
-}
-/* Compares strings. Returns 0 if s1 contains s2. */
-FUNC_INLINE int bpfstrcmp_contains(const char* s1, const char* s2,
-                                   unsigned size) {
-  if (!s1 || !s2) return -256;
-  for (unsigned i = 0; i < size && *s1 && (*s1 == *s2); ++s1, ++s2, ++i);
-  char c1 = *s1, c2 = *s2;
-  if (!c2) return 0;
+  if (contains && !c2) return 0;
   return (int)(c1 - c2);
 }
 
@@ -395,25 +395,25 @@ FUNC_INLINE int is_file_with_buffer(const struct path_dentries* path_dentries) {
   unsigned offset = path_dentries->offset;
   if (offset >= sizeof(path_dentries->data)) return 0;
   unsigned size = sizeof(path_dentries->data) - offset;
-  if (bpfstrcmp_contains(&path_dentries->data[offset], "/etc/", size) != 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "/etc/", size, 1) != 0) {
     return FILE_TYPE_OTHER;
   }
   offset += sizeof("/etc/") - 1;
   if (offset >= sizeof(path_dentries->data)) return 0;
   size = sizeof(path_dentries->data) - offset;
-  if (bpfstrcmp(&path_dentries->data[offset], "passwd", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "passwd", size, 0) == 0) {
     return FILE_TYPE_PASSWD;
   }
-  if (bpfstrcmp(&path_dentries->data[offset], "group", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "group", size, 0) == 0) {
     return FILE_TYPE_GROUP;
   }
-  if (bpfstrcmp(&path_dentries->data[offset], "doas.conf", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "doas.conf", size, 0) == 0) {
     return FILE_TYPE_DOAS;
   }
-  if (bpfstrcmp(&path_dentries->data[offset], "sudoers", size) == 0) {
+  if (bpfstrcmp(&path_dentries->data[offset], "sudoers", size, 0) == 0) {
     return FILE_TYPE_SUDOERS;
   }
-  if (bpfstrcmp_contains(&path_dentries->data[offset], "sudoers.d/", size) ==
+  if (bpfstrcmp(&path_dentries->data[offset], "sudoers.d/", size, 1) ==
       0) {
     return FILE_TYPE_SUDOERS_DIR;
   }
@@ -430,7 +430,8 @@ struct {
 
 FUNC_INLINE int is_system_logger_pid(pid_t pid) {
   const int array_index = 0;
-  pid_t* system_logger_pid = bpf_map_lookup_elem(&system_logger_pid_array, &array_index);
+  pid_t* system_logger_pid =
+      bpf_map_lookup_elem(&system_logger_pid_array, &array_index);
   if (!system_logger_pid) return -1;
   return pid == *system_logger_pid;
 }

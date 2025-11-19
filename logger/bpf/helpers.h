@@ -9,6 +9,7 @@
 #include "logger/bpf/task.h"
 
 #define FUNC_INLINE static inline __attribute__((always_inline))
+#define UNUSED __attribute__((unused))
 #define AT_FDCWD -100
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
@@ -157,6 +158,9 @@ FUNC_INLINE int read_path_dentries(const struct path* path,
   ret = bpf_core_read(&mnt_parent, sizeof(mnt_parent), &mnt->mnt_parent);
   if (ret < 0) return -EBPF_PROBE_READ_KERNEL;
   int error = -EDENTRIESTOOMUCH;
+#ifndef HAVE_BOUNDED_LOOPS
+#pragma unroll
+#endif
   for (int i = 0; i < MAX_DENTRIES; ++i) {
     ret =
         bpf_core_read(&dentry_parent, sizeof(dentry_parent), &dentry->d_parent);
