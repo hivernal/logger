@@ -420,15 +420,25 @@ FUNC_INLINE int is_file_with_buffer(const struct path_dentries* path_dentries) {
   return FILE_TYPE_OTHER;
 }
 
-/* From userspace. */
-pid_t logger_pid;
+/* Program PID from userspace. */
+struct {
+  __uint(type, BPF_MAP_TYPE_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, u32);
+  __type(value, pid_t);
+} system_logger_pid_array SEC(".maps");
 
-#define is_logger_pid() ((pid_t)bpf_get_current_pid_tgid() == logger_pid)
+FUNC_INLINE int is_system_logger_pid(pid_t pid) {
+  const int array_index = 0;
+  pid_t* system_logger_pid = bpf_map_lookup_elem(&system_logger_pid_array, &array_index);
+  if (!system_logger_pid) return -1;
+  return pid == *system_logger_pid;
+}
 
 FUNC_INLINE int on_sys_enter_write(int fd, const char* buffer, size_t count) {
   const int array_index = 0;
   const uint64_t hash_id = bpf_get_current_pid_tgid();
-  if ((pid_t)hash_id == logger_pid) return 0;
+  if (is_system_logger_pid((pid_t)hash_id)) return 0;
   struct sys_enter_write* enter =
       bpf_map_lookup_elem(&sys_enter_write_array, &array_index);
   if (!enter) return 1;
@@ -477,7 +487,7 @@ int tracepoint__syscalls__sys_enter_write(struct syscall_trace_enter* ctx) {
 #ifdef HAVE_RINGBUF_MAP_TYPE
 FUNC_INLINE int on_sys_exit_write(int ret, int event_type) {
   const uint64_t hash_id = bpf_get_current_pid_tgid();
-  if ((pid_t)hash_id == logger_pid) return 0;
+  if (is_system_logger_pid((pid_t)hash_id)) return 0;
   const struct sys_enter_write* enter =
       bpf_map_lookup_elem(&sys_enter_write_hash, &hash_id);
   if (!enter) return 1;
@@ -511,7 +521,7 @@ clean:
 FUNC_INLINE int on_sys_exit_write(struct syscall_trace_exit* ctx,
                                   int event_type) {
   const uint64_t hash_id = bpf_get_current_pid_tgid();
-  if ((pid_t)hash_id == logger_pid) return 0;
+  if (is_system_logger_pid((pid_t)hash_id)) return 0;
   struct sys_enter_write* enter =
       bpf_map_lookup_elem(&sys_enter_write_hash, &hash_id);
   if (!enter) return 1;
@@ -543,7 +553,7 @@ int tracepoint__syscalls__sys_exit_write(struct syscall_trace_exit* ctx) {
 
 FUNC_INLINE int on_sys_enter_read(int fd, size_t count) {
   const uint64_t hash_id = bpf_get_current_pid_tgid();
-  if ((pid_t)hash_id == logger_pid) return 0;
+  if (is_system_logger_pid((pid_t)hash_id)) return 0;
   struct sys_enter_read enter;
   enter.error = 0;
   const struct file* file;
@@ -571,7 +581,7 @@ FUNC_INLINE int on_sys_exit_read(struct syscall_trace_exit* ctx,
                                  int event_type) {
 #endif
   const uint64_t hash_id = bpf_get_current_pid_tgid();
-  if ((pid_t)hash_id == logger_pid) return 0;
+  if (is_system_logger_pid((pid_t)hash_id)) return 0;
   struct sys_enter_read* enter =
       bpf_map_lookup_elem(&sys_enter_read_hash, &hash_id);
   if (!enter) return 1;

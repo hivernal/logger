@@ -150,7 +150,6 @@ int bpf_open(struct bpf* bpf, const struct bpf_opts* opts) {
   else if (!(bpf->sock_skel = sock_bpf__open()))
     goto err;
 
-  if (bpf->file_skel) bpf->file_skel->bss->logger_pid = getpid();
   return 0;
 err:
   fprintf(stderr, BPF_OPEN_ERROR_MSG);
@@ -393,6 +392,13 @@ int create_map_buffers(struct bpf* bpf, struct bpf_opts* opts) {
     if (RENAME_MAP_ENABLED(opts) &&
         map_buffer_new_or_add(&bpf->map_buffer, bpf->file_skel, sys_rename,
                               &bpf->sys_rename_cb_data))
+      goto err;
+    const pid_t pid = getpid();
+    const int index = 0;
+    if ((WRITE_MAP_ENABLED(opts) || READ_MAP_ENABLED(opts)) &&
+        bpf_map__update_elem(bpf->file_skel->maps.system_logger_pid_array,
+                             &index, sizeof(index), &pid, sizeof(pid),
+                             BPF_ANY) < 0)
       goto err;
   }
 
